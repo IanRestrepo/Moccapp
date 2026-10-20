@@ -1,0 +1,151 @@
+/*
+ * VetQuiz · tokens de diseño
+ * Dirección: bloques de color planos y saturados, texto negro encima, stickers con contorno
+ * grueso. Sin brillos, sin texto en degradado, casi sin sombras.
+ * Las variables crudas viven en :root / [data-theme=dark]; @theme inline las expone a Tailwind.
+ */
+
+:root {
+  color-scheme: light;
+
+  --vq-bg: #f3efe7;
+  --vq-bg-grid: #e9e3d8;
+  --vq-surface: #ffffff;
+  --vq-surface-2: #ebe6dc;
+  --vq-ink: #16141c;
+  --vq-ink-2: #6f6a76;
+  --vq-ink-3: #aaa4ae;
+  --vq-line: #e2dcd1;
+
+  /* Siempre oscuros, también en modo oscuro: nav, CTA y texto sobre bloques de color */
+  --vq-night: #16141c;
+  --vq-night-2: #2a2732;
+  --vq-on-color: #16141c;
+
+  /* Colores sólidos (bloques, carpetas, píldoras seleccionadas) */
+  --vq-yellow: #ffcf3f;
+  --vq-orange: #ff9b45;
+  --vq-lilac: #ab90f7;
+  --vq-pink: #ff86c3;
+  --vq-mint: #59d394;
+  --vq-sky: #7fb4ff;
+
+  /* Tintes para estados (opción elegida, fondos de etiqueta) */
+  --vq-yellow-tint: #fff1bf;
+  --vq-orange-tint: #ffe2c7;
+  --vq-lilac-tint: #e8dfff;
+  --vq-pink-tint: #ffe0f0;
+  --vq-mint-tint: #d3f5e2;
+  --vq-sky-tint: #dceaff;
+
+  --vq-success: #24b26b;
+  --vq-danger: #f2554b;
+  --vq-warning: #ff9b45;
+
+  /* Degradado solo para el CTA de empezar/enviar examen (no en texto) */
+  --vq-primary-from: #ff7a1a;
+  --vq-primary-to: #ff3f8e;
+
+  --vq-shadow-soft: 0 1px 0 rgba(22, 20, 28, 0.04), 0 6px 18px -10px rgba(22, 20, 28, 0.25);
+  --vq-shadow-float: 0 18px 40px -16px rgba(22, 20, 28, 0.55);
+}
+
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --vq-bg: #14121a;
+  --vq-bg-grid: #1b1922;
+  --vq-surface: #201d28;
+  --vq-surface-2: #2b2834;
+  --vq-ink: #f3f0f7;
+  --vq-ink-2: #a39eac;
+  --vq-ink-3: #6b6675;
+  --vq-line: #2f2b38;
+  --vq-night: #000000;
+  --vq-night-2: #24212c;
+
+  --vq-yellow-tint: #3d3417;
+  --vq-orange-tint: #3f2a1a;
+  --vq-lilac-tint: #2e2649;
+  --vq-pink-tint: #42213a;
+  --vq-mint-tint: #183829;
+  --vq-sky-tint: #1b2c45;
+
+  --vq-shadow-soft: 0 1px 0 rgba(0, 0, 0, 0.3);
+  --vq-shadow-float: 0 18px 40px -12px rgba(0, 0, 0, 0.8);
+}
+
+@theme inline {
+  --color-bg: var(--vq-bg);
+  --color-surface: var(--vq-surface);
+  --color-surface-2: var(--vq-surface-2);
+  --color-ink: var(--vq-ink);
+  --color-ink-2: var(--vq-ink-2);
+  --color-ink-3: var(--vq-ink-3);
+  --color-line: var(--vq-line);
+  --color-night: var(--vq-night);
+  --color-night-2: var(--vq-night-2);
+  --color-on-color: var(--vq-on-color);
+
+  --color-yellow: var(--vq-yellow);  --color-yellow-tint: var(--vq-yellow-tint);
+  --color-orange: var(--vq-orange);  --color-orange-tint: var(--vq-orange-tint);
+  --color-lilac: var(--vq-lilac);    --color-lilac-tint: var(--vq-lilac-tint);
+  --color-pink: var(--vq-pink);      --color-pink-tint: var(--vq-pink-tint);
+  --color-mint: var(--vq-mint);      --color-mint-tint: var(--vq-mint-tint);
+  --color-sky: var(--vq-sky);        --color-sky-tint: var(--vq-sky-tint);
+
+  --color-success: var(--vq-success);
+  --color-danger: var(--vq-danger);
+  --color-warning: var(--vq-warning);
+
+  --shadow-soft: var(--vq-shadow-soft);
+  --shadow-float: var(--vq-shadow-float);
+}
+
+@theme {
+  --font-display: 'Bricolage Grotesque Variable', 'Bricolage Grotesque', system-ui, sans-serif;
+  --font-sans: 'Plus Jakarta Sans Variable', 'Plus Jakarta Sans', system-ui, sans-serif;
+
+  --text-mega: 4rem;      --text-mega--line-height: 0.88;   --text-mega--letter-spacing: -0.045em;
+  --text-title: 2.125rem; --text-title--line-height: 1;     --text-title--letter-spacing: -0.035em;
+  --text-lede: 1.625rem;  --text-lede--line-height: 1.22;   --text-lede--letter-spacing: -0.02em;
+
+  --radius-card: 28px;
+  --radius-card-lg: 34px;
+
+  --ease-out-soft: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* CTA de examen */
+@utility bg-primary {
+  background-image: linear-gradient(100deg, var(--vq-primary-from), var(--vq-primary-to));
+}
+/* Cuadrícula de papel muy tenue (referencia "Saved") */
+@utility bg-paper {
+  background-color: var(--vq-bg);
+  background-image:
+    linear-gradient(var(--vq-bg-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--vq-bg-grid) 1px, transparent 1px);
+  background-size: 32px 32px;
+  background-position: -1px -1px;
+}
+/* Títulos display con el eje óptico al máximo: letras más cerradas y con más carácter */
+@utility font-display-tight {
+  font-family: var(--font-display);
+  font-variation-settings: 'opsz' 96;
+}
+
+@keyframes vq-shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-7px); }
+  40% { transform: translateX(6px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(2px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

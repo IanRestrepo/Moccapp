@@ -1,0 +1,1 @@
+ALTER TABLE "question_bank" ADD COLUMN "prompt_version" smallint DEFAULT 1 NOT NULL;
