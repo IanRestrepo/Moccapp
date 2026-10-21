@@ -9,3 +9,4 @@ docs/muestra-banco-anatomia.txt
 client/dev-dist
 .vercel
 vercel-env.txt
+.env*.local
