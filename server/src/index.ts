@@ -4,7 +4,7 @@ import { createApp } from './app.js'
 import { resumePending } from './services/bank.js'
 
 const server = createApp().listen(env.PORT, () => {
-  console.log(`VetQuiz API en http://localhost:${env.PORT} · modelo ${env.GEMINI_MODEL}`)
+  console.log(`Moccapp API en http://localhost:${env.PORT} · modelo ${env.GEMINI_MODEL}`)
 })
 // Armar un examen puede esperar una ampliación del banco (~3 min con PDFs grandes): sin el límite de 5 min de Node
 server.requestTimeout = 10 * 60_000

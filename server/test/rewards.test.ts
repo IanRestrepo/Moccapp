@@ -103,7 +103,7 @@ describe('premios', () => {
     assert.equal(res.body.balance, 50)
     assert.equal(res.body.redemption.status, 'pending')
     assert.match(res.body.whatsappUrl!, /^https:\/\/wa\.me\/573001234567\?text=/)
-    assert.match(decodeURIComponent(res.body.whatsappUrl!), /Reclamé «Heladito» en VetQuiz con 150 huesitos/)
+    assert.match(decodeURIComponent(res.body.whatsappUrl!), /Reclamé «Heladito» en Moccapp con 150 huesitos/)
     heladitoRedemption = res.body.redemption.id
     const after = await api<RewardsDTO>('GET', '/rewards')
     assert.equal(after.body.redemptions[0]!.rewardName, 'Heladito')

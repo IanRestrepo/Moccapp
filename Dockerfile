@@ -1,4 +1,4 @@
-# VetQuiz: una sola imagen con la API y la app (PWA).
+# Moccapp: una sola imagen con la API y la app (PWA).
 # Railway / Render / Fly la detectan sola. Los archivos subidos van a /data (monta un volumen ahí).
 
 FROM node:22-slim AS build

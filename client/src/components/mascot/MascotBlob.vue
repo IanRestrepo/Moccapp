@@ -4,7 +4,7 @@ import { motion, useReducedMotion } from 'motion-v'
 import { spring } from '@/lib/motion'
 
 /**
- * Mocca: la mascota de VetQuiz, basada en la perrita de la casa. Orejas grandes y paradas,
+ * Mocca: la mascota de Moccapp, basada en la perrita de la casa. Orejas grandes y paradas,
  * pelaje chocolate oscuro, cejitas y cachetes caramelo, pecho blanco, patitas caramelo y collar morado con una placa con la M de Mocca.
  * Estilo sticker: relleno plano, contorno negro y borde blanco troquelado.
  * happy (inicio) · thinking (generando) · surprised (poco tiempo) · celebrating (nota ≥ 3.0) · sad (nota baja)

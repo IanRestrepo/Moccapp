@@ -1,5 +1,5 @@
 /*
- * VetQuiz · tokens de diseño
+ * Moccapp · tokens de diseño
  * Dirección: bloques de color planos y saturados, texto negro encima, stickers con contorno
  * grueso. Sin brillos, sin texto en degradado, casi sin sombras.
  * Las variables crudas viven en :root / [data-theme=dark]; @theme inline las expone a Tailwind.

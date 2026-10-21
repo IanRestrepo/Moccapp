@@ -1,4 +1,4 @@
-# VetQuiz 🐾
+# Moccapp 🐾
 
 App de estudio para Medicina Veterinaria y Zootecnia (UTP). Subes tus apuntes (PDF, Word, PowerPoint, fotos, texto o un video de YouTube), **Mocca** genera un banco de preguntas con Gemini y presentas exámenes ilimitados con cronómetro, nota de 0,0 a 5,0, revisión con la cita de tu fuente, XP y racha diaria.
 
@@ -77,7 +77,7 @@ La recomendación es **[Railway](https://railway.com)**: un solo servicio entreg
 **1. Sube el código a GitHub (repositorio privado)**
 
 ```bash
-git init && git add . && git commit -m "VetQuiz MVP"
+git init && git add . && git commit -m "Moccapp MVP"
 ```
 
 Crea un repo **privado** en GitHub y sigue las instrucciones para hacer `git push`. El `.env` **no** se sube (está en `.gitignore`).

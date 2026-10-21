@@ -118,7 +118,7 @@ export async function getRewards(opts: { includeInactive?: boolean } = {}): Prom
 /** Mensaje de WhatsApp que ella le manda al administrador al reclamar */
 export function whatsappUrl(reward: { name: string; cost: number }): string | null {
   if (!env.ADMIN_WHATSAPP) return null
-  const text = `¡Hola! 🐾 Reclamé «${reward.name}» en VetQuiz con ${reward.cost.toLocaleString('es-CO')} huesitos. ¡Me lo gané estudiando! 🦴`
+  const text = `¡Hola! 🐾 Reclamé «${reward.name}» en Moccapp con ${reward.cost.toLocaleString('es-CO')} huesitos. ¡Me lo gané estudiando! 🦴`
   return `https://wa.me/${env.ADMIN_WHATSAPP}?text=${encodeURIComponent(text)}`
 }
 
