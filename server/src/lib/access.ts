@@ -5,6 +5,7 @@ import type { Request, RequestHandler, Response } from 'express'
 import { z } from 'zod'
 import { env } from '../env.js'
 import { AppError } from './errors.js'
+import { OWNER, displayNameFor, isOwner, runAs } from './profile.js'
 
 const COOKIE = 'vq_access'
 const ONE_YEAR = 365 * 24 * 3600
@@ -22,47 +23,77 @@ function readCookie(req: Request, name: string): string | null {
   return null
 }
 
-export const accessEnabled = () => Boolean(env.ACCESS_CODE)
-const hasAccess = (req: Request) => {
-  if (!env.ACCESS_CODE) return true
+/** Códigos válidos para entrar: con PROFILE_CODES, uno por perfil; si no, ACCESS_CODE es de la dueña */
+const loginCodes = () => (env.PROFILE_CODES.length ? env.PROFILE_CODES : env.ACCESS_CODE ? [{ name: OWNER, code: env.ACCESS_CODE }] : [])
+export const accessEnabled = () => loginCodes().length > 0
+const profileToken = (name: string, code: string) => `${name}.${tokenFor(`${name}:${code}`)}`
+
+/** Perfil de quien hace la petición, o null si no tiene acceso */
+export function profileOf(req: Request): string | null {
+  if (!accessEnabled()) return OWNER
   const cookie = readCookie(req, COOKIE)
-  return !!cookie && sameToken(cookie, tokenFor(env.ACCESS_CODE))
+  if (!cookie) return null
+  // dispositivos que entraron antes de los perfiles (con ACCESS_CODE): siguen siendo de la dueña
+  if (env.ACCESS_CODE && sameToken(cookie, tokenFor(env.ACCESS_CODE))) return OWNER
+  const name = cookie.split('.')[0]!
+  const p = loginCodes().find((x) => x.name === name)
+  return p && sameToken(cookie, profileToken(p.name, p.code)) ? p.name : null
 }
 
-/** Protege toda la API excepto salud y la propia entrada */
+/** Protege toda la API excepto salud y la propia entrada; el resto de la petición corre como ese perfil */
 export const requireAccess: RequestHandler = (req, _res, next) => {
-  if (req.path === '/health' || req.path === '/access' || hasAccess(req)) return next()
+  const profile = profileOf(req)
+  if (profile) return runAs(profile, next)
+  if (req.path === '/health' || req.path === '/access') return next()
   next(new AppError(401, 'ACCESS_REQUIRED', 'Escribe tu código de acceso para entrar.'))
+}
+
+/** Huesitos y premios son solo de la dueña */
+export const requireOwner: RequestHandler = (_req, _res, next) => {
+  if (isOwner()) return next()
+  next(new AppError(403, 'OWNER_ONLY', 'Esta parte es solo para Ash.'))
 }
 
 // Freno simple contra adivinar el código: 10 intentos fallidos cada 10 minutos por IP
 const attempts = new Map<string, { n: number; until: number }>()
 
+function statusFor(profile: string | null) {
+  return {
+    required: accessEnabled(),
+    granted: !!profile,
+    profile,
+    owner: profile === OWNER,
+    name: profile ? displayNameFor(profile) : null,
+    /** en Vercel los archivos se suben directo a Vercel Blob */
+    blobUploads: !!env.BLOB_READ_WRITE_TOKEN,
+  }
+}
+
 export function accessStatus(req: Request, res: Response) {
-  res.json({ required: accessEnabled(), granted: hasAccess(req) })
+  res.json(statusFor(profileOf(req)))
 }
 
 export function enterAccess(req: Request, res: Response) {
   const ip = req.ip ?? 'unknown'
   const now = Date.now()
   const a = attempts.get(ip)
-  if (a && a.until > now && a.n >= 10)
-    throw new AppError(429, 'TOO_MANY_ATTEMPTS', 'Demasiados intentos. Espera unos minutos.')
+  if (a && a.until > now && a.n >= 10) throw new AppError(429, 'TOO_MANY_ATTEMPTS', 'Demasiados intentos. Espera unos minutos.')
 
   const { code } = z.object({ code: z.string().trim().min(1).max(200) }).parse(req.body)
-  if (!env.ACCESS_CODE || !sameToken(tokenFor(code), tokenFor(env.ACCESS_CODE))) {
+  const match = loginCodes().find((p) => sameToken(tokenFor(code), tokenFor(p.code)))
+  if (!match) {
     attempts.set(ip, { n: (a && a.until > now ? a.n : 0) + 1, until: now + 10 * 60_000 })
     throw new AppError(401, 'WRONG_CODE', 'Ese código no es. Revisa mayúsculas y espacios.')
   }
   attempts.delete(ip)
-  res.cookie(COOKIE, tokenFor(env.ACCESS_CODE), {
+  res.cookie(COOKIE, profileToken(match.name, match.code), {
     httpOnly: true,
     sameSite: 'lax',
     secure: env.NODE_ENV === 'production',
     maxAge: ONE_YEAR * 1000,
     path: '/',
   })
-  res.json({ required: true, granted: true })
+  res.json(statusFor(match.name))
 }
 
 // ── Administrador (página de premios) ────────────────────────
@@ -72,7 +103,7 @@ export function enterAccess(req: Request, res: Response) {
 const ADMIN_COOKIE = 'vq_admin'
 const adminToken = (code: string) => createHash('sha256').update(`vetquiz-admin:${code}`).digest('hex')
 
-function isAdmin(req: Request): boolean {
+export function isAdmin(req: Request): boolean {
   if (!env.ADMIN_CODE) return env.NODE_ENV !== 'production'
   const cookie = readCookie(req, ADMIN_COOKIE)
   return !!cookie && sameToken(cookie, adminToken(env.ADMIN_CODE))

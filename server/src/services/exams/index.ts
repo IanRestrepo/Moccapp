@@ -20,6 +20,7 @@ import { AppError, Errors } from '../../lib/errors.js'
 import { expandBankOnce, queueExpansion } from '../bank.js'
 import { BANK_PROMPT_VERSION } from '../../ai/prompts.js'
 import { getSource } from '../sources.js'
+import { currentProfile } from '../../lib/profile.js'
 import { getStatsRow, localDate, motivationFor, recordCompletedExam, toStatsDTO } from '../gamification.js'
 import { gradeAuto, gradeOpenAnswers, isValidAnswer, toPublicQuestion, toReview, type Grade } from './grading.js'
 import { LEVEL_MIX, displayPermutation, orderForExam, selectQuestions, type Candidate } from './selection.js'
@@ -42,13 +43,13 @@ async function loadCandidates(sourceIds: string[]): Promise<Candidate[]> {
     })
     .from(questionBank)
     .where(inArray(questionBank.sourceId, sourceIds))
-  // historial por pregunta (en cualquier examen, aunque haya mezclado otras fuentes)
+  // historial por pregunta de este perfil (en cualquier examen, aunque haya mezclado otras fuentes)
   const history = await db
     .select({ questionId: examAnswers.questionId, credit: examAnswers.credit, at: exams.createdAt })
     .from(examAnswers)
     .innerJoin(exams, eq(exams.id, examAnswers.examId))
     .innerJoin(questionBank, eq(questionBank.id, examAnswers.questionId))
-    .where(inArray(questionBank.sourceId, sourceIds))
+    .where(and(inArray(questionBank.sourceId, sourceIds), eq(exams.profile, currentProfile())))
     .orderBy(asc(exams.createdAt))
 
   const seen = new Map<string, { times: number; lastCredit: number | null; lastAt: number }>()
@@ -102,6 +103,7 @@ async function insertExam(p: {
       .values({
         sourceId: p.sourceIds[0]!,
         sourceIds: p.sourceIds,
+        profile: currentProfile(),
         mode: p.mode,
         parentExamId: p.parentExamId,
         level: p.level,
@@ -236,7 +238,7 @@ export async function createRepeat(examId: string): Promise<CreateExamResponse> 
 // ── Durante el examen ────────────────────────────────────────
 
 async function getExam(id: string): Promise<Exam> {
-  const [exam] = await db.select().from(exams).where(eq(exams.id, id))
+  const [exam] = await db.select().from(exams).where(and(eq(exams.id, id), eq(exams.profile, currentProfile())))
   if (!exam) throw Errors.notFound('El examen')
   return exam
 }
@@ -425,7 +427,7 @@ async function buildResult(examId: string, streak?: { current: number; extendedT
     const sameDay = await db
       .select({ id: exams.id, finishedAt: exams.finishedAt })
       .from(exams)
-      .where(eq(exams.status, 'completed'))
+      .where(and(eq(exams.status, 'completed'), eq(exams.profile, currentProfile())))
       .orderBy(asc(exams.finishedAt))
     const first = sameDay.find((e) => e.finishedAt && localDate(e.finishedAt) === day)
     streak = { current: toStatsDTO(await getStatsRow()).currentStreak, extendedToday: first?.id === exam.id }
@@ -506,6 +508,7 @@ export async function getExamDTO(examId: string, now = new Date()): Promise<Exam
 
 export async function listHistory(q: { sourceId?: string; cursor?: string; limit: number }): Promise<{ exams: ExamHistoryItemDTO[]; nextCursor: string | null }> {
   const where = and(
+    eq(exams.profile, currentProfile()),
     q.sourceId ? sql`(${exams.sourceId} = ${q.sourceId} or ${exams.sourceIds} @> ${JSON.stringify([q.sourceId])}::jsonb)` : undefined,
     q.cursor ? lt(exams.createdAt, new Date(q.cursor)) : undefined,
   )

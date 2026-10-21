@@ -8,6 +8,12 @@ import type {
   ExamHistoryItemDTO,
   ExamInProgressDTO,
   AdminRewardsDTO,
+  AdminPresenceDTO,
+  StudyDeckDTO,
+  PathDTO,
+  PathLessonDTO,
+  PathCompleteResponse,
+  PresenceView,
   RedeemResponse,
   RedemptionDTO,
   RewardDTO,
@@ -85,9 +91,47 @@ function uploadWithProgress(form: FormData, onProgress: (ratio: number) => void,
   })
 }
 
+let blobMode: Promise<boolean> | null = null
+const usesBlobUploads = () =>
+  (blobMode ??= request<{ blobUploads?: boolean }>('GET', '/access')
+    .then((s) => !!s.blobUploads)
+    .catch(() => {
+      blobMode = null
+      return false
+    }))
+
+async function uploadViaBlob(file: File, opts: { title?: string; onProgress?: (r: number) => void; signal?: AbortSignal }): Promise<CreateSourceResponse> {
+  const { upload } = await import('@vercel/blob/client')
+  let blob
+  try {
+    blob = await upload(`uploads/${file.name}`, file, {
+      access: 'public',
+      handleUploadUrl: '/api/uploads/blob',
+      multipart: file.size > 8 * 1024 * 1024,
+      contentType: file.type || 'application/octet-stream',
+      abortSignal: opts.signal,
+      // la subida es casi todo el trabajo; el registro de la fuente es lo que falta
+      onUploadProgress: (e) => opts.onProgress?.(Math.min(0.97, e.percentage / 100)),
+    })
+  } catch (err) {
+    if (opts.signal?.aborted) throw err
+    throw new ApiRequestError('No se pudo subir el archivo. Revisa tu internet e intenta de nuevo.', 'UPLOAD_FAILED', 0, true)
+  }
+  const res = await request<CreateSourceResponse>('POST', '/sources', {
+    kind: 'blob',
+    url: blob.url,
+    filename: file.name,
+    mimeType: file.type || 'application/octet-stream',
+    title: opts.title,
+  })
+  opts.onProgress?.(1)
+  return res
+}
+
 export const api = {
   // Código de acceso (solo en la nube)
-  accessStatus: () => request<{ required: boolean; granted: boolean }>('GET', '/access'),
+  accessStatus: () =>
+    request<{ required: boolean; granted: boolean; profile?: string | null; owner?: boolean; name?: string | null; blobUploads?: boolean }>('GET', '/access'),
   enter: (code: string) => request<{ granted: boolean }>('POST', '/access', { code }),
 
   // Fuentes
@@ -95,7 +139,9 @@ export const api = {
   getSource: (id: string) => request<{ source: SourceDTO }>('GET', `/sources/${id}`).then((r) => r.source),
   createTextSource: (text: string, title?: string) => request<CreateSourceResponse>('POST', '/sources', { kind: 'text', text, title }),
   createYoutubeSource: (url: string, title?: string) => request<CreateSourceResponse>('POST', '/sources', { kind: 'youtube', url, title }),
-  uploadSource(file: File, opts: { title?: string; onProgress?: (r: number) => void; signal?: AbortSignal } = {}) {
+  async uploadSource(file: File, opts: { title?: string; onProgress?: (r: number) => void; signal?: AbortSignal } = {}) {
+    // En Vercel el archivo va directo a Vercel Blob (las funciones no reciben más de 4,5 MB)
+    if (await usesBlobUploads()) return uploadViaBlob(file, opts)
     const form = new FormData()
     form.append('file', file)
     if (opts.title) form.append('title', opts.title)
@@ -121,11 +167,25 @@ export const api = {
     return request<{ exams: ExamHistoryItemDTO[]; nextCursor: string | null }>('GET', `/exams?${params}`)
   },
 
+  // Modo estudio
+  studyDeck: (sourceIds: string[]) => request<StudyDeckDTO>('GET', `/study?sources=${sourceIds.join(',')}`),
+
+  // Camino
+  path: () => request<PathDTO>('GET', '/path'),
+  pathLesson: (key: string) => request<PathLessonDTO>('GET', `/path/${encodeURIComponent(key)}`),
+  completeLesson: (key: string, body: { firstTry: number; total: number }) =>
+    request<PathCompleteResponse>('POST', `/path/${encodeURIComponent(key)}/complete`, body),
+  openChest: (key: string) => request<{ bones: number; xp: number; nextKey: string | null }>('POST', `/path/${encodeURIComponent(key)}/open`),
+
   // Premios (huesitos)
   rewards: () => request<RewardsDTO>('GET', '/rewards'),
   redeem: (rewardId: string) => request<RedeemResponse>('POST', `/rewards/${rewardId}/redeem`),
 
+  // Presencia: la app avisa que está abierta
+  ping: (view: PresenceView) => request<void>('POST', '/presence', { view }),
+
   // Administrador
+  adminPresence: () => request<AdminPresenceDTO>('GET', '/admin/presence'),
   adminStatus: () => request<{ required: boolean; granted: boolean; disabled: boolean }>('GET', '/admin/status'),
   adminLogin: (code: string) => request<{ granted: boolean }>('POST', '/admin/login', { code }),
   adminRewards: () => request<AdminRewardsDTO>('GET', '/admin/rewards'),

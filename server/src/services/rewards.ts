@@ -4,6 +4,7 @@ import { computeBones, type RedemptionDTO, type RewardDTO, type RewardInput, typ
 import { db } from '../db/client.js'
 import { exams, redemptions, rewards, userStats, type Redemption, type Reward } from '../db/schema.js'
 import { env } from '../env.js'
+import { OWNER } from '../lib/profile.js'
 import { AppError, Errors } from '../lib/errors.js'
 
 /** Escalera inicial: el heladito sale en ~5 exámenes; el viaje es la meta grande. Él los ajusta en #/admin. */
@@ -36,7 +37,7 @@ export function ensureRewardsSetup(): Promise<void> {
     if (stats?.displayName === 'Doc') await db.update(userStats).set({ displayName: env.OWNER_NAME }).where(eq(userStats.id, 1))
 
     if (stats && !stats.bonesBackfilled) {
-      const done = await db.select().from(exams).where(eq(exams.status, 'completed'))
+      const done = await db.select().from(exams).where(and(eq(exams.status, 'completed'), eq(exams.profile, OWNER)))
       let total = 0
       for (const e of done) {
         const bones = computeBones({

@@ -5,8 +5,9 @@ import { db } from '../db/client.js'
 import { userStats } from '../db/schema.js'
 import { getStatsRow, toStatsDTO } from '../services/gamification.js'
 import { bonesBalance } from '../services/rewards.js'
+import { isOwner, statsIdFor } from '../lib/profile.js'
 
-const statsDTO = async () => toStatsDTO(await getStatsRow(), new Date(), (await bonesBalance()).balance)
+const statsDTO = async () => toStatsDTO(await getStatsRow(), new Date(), isOwner() ? (await bonesBalance()).balance : 0)
 
 export const statsRouter = Router()
 
@@ -17,6 +18,6 @@ statsRouter.get('/', async (_req, res) => {
 statsRouter.patch('/', async (req, res) => {
   const patch = UpdateStatsSchema.parse(req.body)
   await getStatsRow()
-  if (Object.keys(patch).length) await db.update(userStats).set({ ...patch, updatedAt: new Date() }).where(eq(userStats.id, 1))
+  if (Object.keys(patch).length) await db.update(userStats).set({ ...patch, updatedAt: new Date() }).where(eq(userStats.id, statsIdFor()))
   res.json({ stats: await statsDTO() })
 })

@@ -1,16 +1,10 @@
-import { asc, count, desc, eq, inArray, max } from 'drizzle-orm'
-import {
-  SOURCE_COLORS,
-  type BankStats,
-  type Difficulty,
-  type QuestionType,
-  type SourceColor,
-  type SourceDTO,
-} from '@vetquiz/shared'
+import { and, asc, count, desc, eq, inArray, max } from 'drizzle-orm'
+import { SOURCE_COLORS, type BankStats, type Difficulty, type QuestionType, type SourceColor, type SourceDTO } from '@vetquiz/shared'
 import { db } from '../db/client.js'
 import { exams, questionBank, sources, type NewSource, type Source } from '../db/schema.js'
 import { AppError, Errors } from '../lib/errors.js'
-import { queueGeneration } from './bank.js'
+import { currentProfile, OWNER, visibleOwners } from '../lib/profile.js'
+import { isFilling, isRunning, queueGeneration } from './bank.js'
 import { hashFile, hashText, hashYoutube, normalizeText } from './ingest/hash.js'
 import { detectFileKind, formatFromMime, titleFromFilename } from './ingest/files.js'
 import { extractDocx, extractPptx } from './ingest/office.js'
@@ -33,6 +27,11 @@ async function nextColor(): Promise<SourceColor> {
 async function findDuplicate(contentHash: string): Promise<CreateResult | null> {
   const [existing] = await db.select().from(sources).where(eq(sources.contentHash, contentHash))
   if (!existing) return null
+  // la subió otra persona y esta no la ve: pasa a ser de la dueña para que la vean las dos
+  if (!visibleOwners().includes(existing.owner)) {
+    await db.update(sources).set({ owner: OWNER }).where(eq(sources.id, existing.id))
+    existing.owner = OWNER
+  }
   if (existing.status === 'error') {
     const [updated] = await db
       .update(sources)
@@ -45,12 +44,12 @@ async function findDuplicate(contentHash: string): Promise<CreateResult | null> 
   return { source: existing, deduplicated: true }
 }
 
-async function insertAndQueue(values: Omit<NewSource, 'color'>): Promise<CreateResult> {
+async function insertAndQueue(values: Omit<NewSource, 'color' | 'owner'>): Promise<CreateResult> {
   let source: Source
   try {
     ;[source] = (await db
       .insert(sources)
-      .values({ ...values, color: await nextColor() })
+      .values({ ...values, owner: currentProfile(), color: await nextColor() })
       .returning()) as [Source]
   } catch (err) {
     // carrera: dos subidas iguales al mismo tiempo → gana la primera
@@ -132,7 +131,7 @@ export async function createYoutubeSource(url: string, title?: string): Promise<
 }
 
 export async function retrySource(id: string): Promise<Source> {
-  const source = await getSource(id)
+  const source = await getOwnSource(id)
   if (source.status !== 'error') throw Errors.conflict('NOT_FAILED', 'Esta fuente no tiene errores que reintentar.')
   await db.delete(questionBank).where(eq(questionBank.sourceId, id))
   const [updated] = await db
@@ -144,14 +143,26 @@ export async function retrySource(id: string): Promise<Source> {
   return updated!
 }
 
+/** Una fuente que este perfil puede ver */
 export async function getSource(id: string): Promise<Source> {
-  const [source] = await db.select().from(sources).where(eq(sources.id, id))
+  const [source] = await db
+    .select()
+    .from(sources)
+    .where(and(eq(sources.id, id), inArray(sources.owner, visibleOwners())))
   if (!source) throw Errors.notFound('La fuente')
   return source
 }
 
-export async function deleteSource(id: string): Promise<void> {
+/** Solo quien la subió puede renombrarla, reintentarla o borrarla */
+export async function getOwnSource(id: string): Promise<Source> {
   const source = await getSource(id)
+  if (source.owner !== currentProfile())
+    throw new AppError(403, 'NOT_YOURS', 'Esta fuente es de Ash: puedes estudiarla, pero no cambiarla.')
+  return source
+}
+
+export async function deleteSource(id: string): Promise<void> {
+  const source = await getOwnSource(id)
   await db.delete(sources).where(eq(sources.id, id))
   if (source.storageKey) await storage.remove(source.storageKey)
 }
@@ -178,7 +189,7 @@ export async function toSourceDTOs(rows: Source[]): Promise<SourceDTO[]> {
   const examRows = await db
     .select({ sourceId: exams.sourceId, n: count(), best: max(exams.score) })
     .from(exams)
-    .where(inArray(exams.sourceId, ids))
+    .where(and(inArray(exams.sourceId, ids), eq(exams.profile, currentProfile())))
     .groupBy(exams.sourceId)
 
   // Para PDF/imagen/video no hay texto extraído: la hoja de la carpeta muestra una cita real del banco
@@ -209,6 +220,7 @@ export async function toSourceDTOs(rows: Source[]): Promise<SourceDTO[]> {
       mimeType: s.mimeType,
       color: s.color,
       status: s.status,
+      filling: isFilling(s),
       errorMessage: s.errorMessage,
       topics: s.topics,
       thumbnailUrl: s.thumbnailUrl ?? (format === 'image' ? `/api/sources/${s.id}/file` : null),
@@ -217,14 +229,41 @@ export async function toSourceDTOs(rows: Source[]): Promise<SourceDTO[]> {
       examsTaken: examsBy.get(s.id)?.n ?? 0,
       bestScore: examsBy.get(s.id)?.best ?? null,
       createdAt: s.createdAt.toISOString(),
+      mine: s.owner === currentProfile(),
     }
   })
 }
 
+/**
+ * Una fuente "procesando" hace más de 10 min nadie la está procesando (el servidor se reinició o Vercel
+ * cortó la función): se marca con error para que ella toque "reintentar" en vez de esperar para siempre.
+ */
+const STALE_PROCESSING_MS = 10 * 60_000
+async function failStaleProcessing(rows: Source[]): Promise<Source[]> {
+  const now = Date.now()
+  const stale = rows.filter((s) => s.status === 'processing' && now - s.updatedAt.getTime() > STALE_PROCESSING_MS && !isRunning(s.id))
+  if (!stale.length) return rows
+  const errorMessage = 'Se interrumpió mientras Mocca la leía. Toca para reintentar.'
+  await db
+    .update(sources)
+    .set({ status: 'error', errorMessage, updatedAt: new Date() })
+    .where(
+      inArray(
+        sources.id,
+        stale.map((s) => s.id),
+      ),
+    )
+  return rows.map((s) => (stale.includes(s) ? { ...s, status: 'error' as const, errorMessage } : s))
+}
+
 export async function listSourceDTOs(): Promise<SourceDTO[]> {
-  return toSourceDTOs(await db.select().from(sources).orderBy(desc(sources.createdAt)))
+  return toSourceDTOs(
+    await failStaleProcessing(
+      await db.select().from(sources).where(inArray(sources.owner, visibleOwners())).orderBy(desc(sources.createdAt)),
+    ),
+  )
 }
 
 export async function getSourceDTO(id: string): Promise<SourceDTO> {
-  return (await toSourceDTOs([await getSource(id)]))[0]!
+  return (await toSourceDTOs(await failStaleProcessing([await getSource(id)])))[0]!
 }

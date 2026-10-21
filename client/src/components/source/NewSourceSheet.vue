@@ -504,7 +504,7 @@ const totalSize = computed(() => files.value.reduce((a, f) => a + f.size, 0))
                   </li>
                 </ul>
                 <p class="mt-5 max-w-[320px] text-[13px] font-medium leading-snug text-ink-2">
-                  {{ many ? 'Cada archivo tarda entre 1 y 4 minutos (de a 2 a la vez).' : 'Tarda entre 1 y 4 minutos.' }}
+                  {{ many ? 'Cada archivo queda listo en ~1 minuto (de a 2 a la vez).' : 'En ~1 minuto ya puedes empezar a estudiar.' }}
                   Puedes cerrar esto: te aviso en Inicio cuando esté lista.
                 </p>
               </template>
@@ -551,6 +551,9 @@ const totalSize = computed(() => files.value.reduce((a, f) => a + f.size, 0))
                 </li>
               </ul>
               </template>
+              <p v-if="srcs.some((x) => x.filling)" class="mt-3 flex items-center gap-2 rounded-full bg-lilac-tint px-4 py-1.5 text-[13px] font-semibold">
+                <span class="size-2 animate-pulse rounded-full bg-lilac" /> Ya puedes empezar; Mocca sigue haciendo más preguntas
+              </p>
               <p v-if="uploadErrors.length" class="mt-3 rounded-[16px] bg-pink-tint px-3 py-2 text-[13px] font-semibold">
                 No se subió: {{ uploadErrors.map((e) => e.name).join(', ') }}
               </p>

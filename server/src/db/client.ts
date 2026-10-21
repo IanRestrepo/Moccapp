@@ -37,7 +37,9 @@ async function createDb(): Promise<{ db: DB; close: () => Promise<void> }> {
   const { Pool } = (await import('pg')).default
   const { drizzle } = await import('drizzle-orm/node-postgres')
   const { migrate } = await import('drizzle-orm/node-postgres/migrator')
-  const pool = new Pool({ connectionString: env.DATABASE_URL, max: 10 })
+  // en Vercel (Neon) pocas conexiones por instancia y se cierran las ociosas
+  const pool = new Pool({ connectionString: env.DATABASE_URL, max: process.env.VERCEL ? 3 : 10, idleTimeoutMillis: 10_000 })
+  if (process.env.VERCEL) (await import('@vercel/functions')).attachDatabasePool(pool)
   const db = drizzle(pool, { schema })
   await migrate(db, { migrationsFolder })
   return { db: db as unknown as DB, close: () => pool.end() }

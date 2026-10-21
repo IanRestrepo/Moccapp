@@ -77,7 +77,7 @@ function startExam() {
     <div class="mt-5 flex items-end justify-between">
       <h1 class="text-mega font-extrabold">Hoy</h1>
       <RouterLink
-        v-if="stats"
+        v-if="stats && ui.owner"
         to="/premios"
         class="mb-1 flex h-11 items-center gap-1.5 rounded-full bg-yellow pl-2 pr-4 font-display text-[17px] font-extrabold text-on-color"
         :aria-label="`${stats.bones} huesitos: ver premios`"
@@ -122,6 +122,34 @@ function startExam() {
       <MascotBlob class="pointer-events-none absolute -top-9 right-1" :mood="studying ? 'thinking' : 'happy'" :size="138" />
       <StickerIcon class="absolute bottom-5 right-4" name="bone" :size="34" :tilt="14" />
     </section>
+
+    <!-- Camino tipo Duolingo -->
+    <RouterLink
+      v-if="ready.length"
+      to="/camino"
+      class="mt-3 flex items-center gap-3 rounded-card bg-mint p-4 pl-5 text-on-color transition-transform active:scale-[0.98]"
+    >
+      <StickerIcon name="paw" :size="34" :tilt="8" />
+      <span class="min-w-0 flex-1">
+        <span class="block font-display text-[19px] font-extrabold leading-tight">Tu camino</span>
+        <span class="block text-[13.5px] font-medium opacity-75">Lecciones cortas que se van desbloqueando.</span>
+      </span>
+      <PhArrowRight :size="20" weight="bold" />
+    </RouterLink>
+
+    <!-- Modo estudio: tarjetas sin examen -->
+    <RouterLink
+      v-if="ready.length"
+      to="/estudiar"
+      class="mt-3 flex items-center gap-3 rounded-card bg-yellow p-4 pl-5 text-on-color transition-transform active:scale-[0.98]"
+    >
+      <StickerIcon name="capsule" :size="34" :tilt="-10" />
+      <span class="min-w-0 flex-1">
+        <span class="block font-display text-[19px] font-extrabold leading-tight">Estudiar con tarjetas</span>
+        <span class="block text-[13.5px] font-medium opacity-75">Sin examen, sin reloj. Pregunta y respuesta.</span>
+      </span>
+      <PhArrowRight :size="20" weight="bold" />
+    </RouterLink>
 
     <!-- Semana -->
     <ol v-if="stats" class="mt-4 grid grid-cols-7 gap-1.5" aria-label="Racha de la semana">

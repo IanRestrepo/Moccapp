@@ -2,26 +2,16 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "client",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "--workspace",
-        "client"
-      ],
-      "port": 5173
+      "name": "client-dev",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["VITE_API_PORT=4001", "npm", "run", "dev", "--workspace", "client", "--", "--port", "5174", "--strictPort"],
+      "port": 5174
     },
     {
-      "name": "api",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": [
-        "run",
-        "dev",
-        "--workspace",
-        "server"
-      ],
-      "port": 4000
+      "name": "api-dev",
+      "runtimeExecutable": "env",
+      "runtimeArgs": ["DATABASE_URL=pglite://./.data/pg-dev", "PORT=4001", "npm", "run", "dev", "--workspace", "server"],
+      "port": 4001
     }
   ]
 }

@@ -1,5 +1,5 @@
 // Cliente de Gemini (SDK oficial @google/genai). La API key solo vive aquí, en el backend.
-import { ApiError, FileState, GoogleGenAI, type Part } from '@google/genai'
+import { ApiError, FileState, GoogleGenAI, ThinkingLevel, type Part } from '@google/genai'
 import { env } from '../env.js'
 import { AppError, Errors } from '../lib/errors.js'
 
@@ -12,6 +12,8 @@ export interface GenerateJsonParams {
   prompt: string
   jsonSchema: unknown
   temperature: number
+  /** 'low' = razona menos y responde mucho más rápido (preguntas de memoria/comprensión, carga rápida) */
+  thinking?: 'low' | 'default'
 }
 
 export interface UploadedFile {
@@ -122,25 +124,34 @@ export function createGeminiLlm(): Llm {
   const ai = new GoogleGenAI({ apiKey: env.GEMINI_API_KEY })
 
   return {
-    async generateJson({ system, source, prompt, jsonSchema, temperature }) {
+    async generateJson({ system, source, prompt, jsonSchema, temperature, thinking = 'default' }) {
       const isVideo = source.some((p) => p.fileData?.fileUri?.includes('youtube.com'))
       let res
       try {
         res = (
-          await withModelFallback([env.GEMINI_MODEL, ...env.GEMINI_FALLBACK_MODELS], (model) =>
-            ai.models.generateContent({
-              model,
-              contents: [{ role: 'user', parts: [...source, { text: prompt }] }],
-              config: {
-                systemInstruction: system,
-                responseMimeType: 'application/json',
-                responseJsonSchema: jsonSchema,
-                temperature,
-                maxOutputTokens: 32_768,
-                httpOptions: { timeout: 240_000 },
-              },
-            }),
-          )
+          await withModelFallback([env.GEMINI_MODEL, ...env.GEMINI_FALLBACK_MODELS], async (model) => {
+            const request = (lowThinking: boolean) =>
+              ai.models.generateContent({
+                model,
+                contents: [{ role: 'user', parts: [...source, { text: prompt }] }],
+                config: {
+                  systemInstruction: system,
+                  responseMimeType: 'application/json',
+                  responseJsonSchema: jsonSchema,
+                  temperature,
+                  maxOutputTokens: 32_768,
+                  httpOptions: { timeout: 240_000 },
+                  ...(lowThinking ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
+                },
+              })
+            try {
+              return await request(thinking === 'low')
+            } catch (err) {
+              // algún modelo de respaldo podría no aceptar el nivel de razonamiento: se pide sin él
+              if (thinking === 'low' && err instanceof ApiError && err.status === 400 && /thinking/i.test(err.message)) return request(false)
+              throw err
+            }
+          })
         ).result
       } catch (err) {
         throw classifyGeminiError(err, isVideo)

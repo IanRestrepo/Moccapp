@@ -121,6 +121,15 @@ export const CreateYoutubeSourceSchema = z.object({
   url: z.string().url(),
 })
 
+/** En Vercel el archivo se sube directo a Vercel Blob desde el celular y luego se registra con su URL */
+export const CreateBlobSourceSchema = z.object({
+  kind: z.literal('blob'),
+  title: z.string().trim().min(1).max(120).optional(),
+  url: z.string().url(),
+  filename: z.string().min(1).max(300),
+  mimeType: z.string().max(200),
+})
+
 export const CreateExamSchema = z.object({
   /** Una o varias fuentes: el examen mezcla preguntas de todas (p. ej. varias presentaciones de la misma materia) */
   sourceIds: z.array(z.string().uuid()).min(1, 'Elige al menos una fuente.').max(12),
@@ -166,6 +175,10 @@ export interface SourceDTO {
   mimeType: string | null
   color: SourceColor
   status: SourceStatus
+  /** Ya se puede estudiar, pero Mocca sigue generando más preguntas en segundo plano */
+  filling: boolean
+  /** La subió este perfil (si no, es de Ash: se puede estudiar pero no cambiar) */
+  mine: boolean
   errorMessage: string | null
   topics: string[]
   thumbnailUrl: string | null
@@ -433,6 +446,97 @@ export interface RedeemResponse {
   balance: number
   /** Link de WhatsApp con el aviso listo para el administrador (null si no está configurado) */
   whatsappUrl: string | null
+}
+
+// ── Modo estudio (tarjetas, sin examen) ─────────────────────
+export interface StudyCardDTO {
+  id: string
+  sourceId: string
+  type: QuestionType
+  topic: string
+  difficulty: Difficulty
+  prompt: string
+  /** Con la respuesta: en modo estudio no hay nada que esconder */
+  data: QuestionData
+  explanation: string
+  sourceQuote: string
+  sourceLocation: string | null
+}
+
+export interface StudyDeckDTO {
+  title: string
+  cards: StudyCardDTO[]
+}
+
+// ── Camino (tipo Duolingo) ──────────────────────────────────
+export type PathNodeKind = 'lesson' | 'boss' | 'chest'
+export type PathNodeStatus = 'locked' | 'current' | 'done'
+
+export interface PathNodeDTO {
+  key: string
+  kind: PathNodeKind
+  label: string
+  status: PathNodeStatus
+  /** 0 si no la ha completado */
+  stars: number
+  questionCount: number
+}
+
+export interface PathUnitDTO {
+  sourceId: string
+  title: string
+  color: SourceColor
+  nodes: PathNodeDTO[]
+}
+
+export interface PathDTO {
+  units: PathUnitDTO[]
+  /** Nodo donde va (null si terminó todo o no hay fuentes) */
+  currentKey: string | null
+  done: number
+  total: number
+}
+
+export interface PathLessonDTO {
+  key: string
+  label: string
+  unitTitle: string
+  color: SourceColor
+  kind: PathNodeKind
+  cards: StudyCardDTO[]
+}
+
+export const PathCompleteSchema = z.object({
+  /** Preguntas acertadas a la primera */
+  firstTry: z.number().int().min(0),
+  total: z.number().int().min(1),
+})
+
+export interface PathCompleteResponse {
+  stars: number
+  xp: number
+  bones: number
+  streak: { current: number; extendedToday: boolean }
+  /** Siguiente nodo que se desbloqueó */
+  nextKey: string | null
+}
+
+// ── Presencia (solo el administrador la ve) ─────────────────
+export const PRESENCE_VIEWS = ['home', 'sources', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
+export type PresenceView = (typeof PRESENCE_VIEWS)[number]
+export const PresencePingSchema = z.object({ view: z.enum(PRESENCE_VIEWS).catch('other') })
+
+export interface PresenceDTO {
+  /** Tiene la app abierta y visible ahora mismo */
+  online: boolean
+  lastSeenAt: string | null
+  view: PresenceView | null
+  /** "iPhone", "Android", "Mac"… */
+  device: string | null
+}
+
+export interface AdminPresenceDTO {
+  people: (PresenceDTO & { profile: string; name: string })[]
 }
 
 export interface AdminRewardsDTO extends RewardsDTO {

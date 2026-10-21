@@ -30,14 +30,14 @@ test('sin código: salud responde, el resto de la API pide acceso', async () => 
   const res = await fetch(`${base}/sources`)
   assert.equal(res.status, 401)
   assert.equal(((await res.json()) as { error: { code: string } }).error.code, 'ACCESS_REQUIRED')
-  assert.deepEqual(await (await fetch(`${base}/access`)).json(), { required: true, granted: false })
+  assert.deepEqual(await (await fetch(`${base}/access`)).json(), { required: true, granted: false, profile: null, owner: false, name: null, blobUploads: false })
 })
 
 test('código correcto: cookie httpOnly que abre la API; una cookie inventada no sirve', async () => {
   const res = await enter('mocca-secreta-123')
   assert.equal(res.status, 200)
   const cookie = res.headers.get('set-cookie')!
-  assert.match(cookie, /vq_access=[a-f0-9]{64}/)
+  assert.match(cookie, /vq_access=ash\.[a-f0-9]{64}/)
   assert.match(cookie, /HttpOnly/i)
   const value = cookie.split(';')[0]!
   assert.equal((await fetch(`${base}/sources`, { headers: { cookie: value } })).status, 200)

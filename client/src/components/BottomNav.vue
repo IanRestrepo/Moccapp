@@ -1,18 +1,20 @@
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
 import { motion } from 'motion-v'
-import { PhHouse, PhFolders, PhPlus, PhClockCounterClockwise, PhGift } from '@phosphor-icons/vue'
+import { computed } from 'vue'
+import { PhHouse, PhFolders, PhPlus, PhClockCounterClockwise, PhGift, PhPath } from '@phosphor-icons/vue'
 import { spring } from '@/lib/motion'
 import { useUiStore } from '@/stores/ui'
 
 const route = useRoute()
 const ui = useUiStore()
-const items = [
+// los premios son solo de Ash; las invitadas tienen el camino en ese lugar
+const items = computed(() => [
   { to: '/', label: 'Inicio', icon: PhHouse },
   { to: '/fuentes', label: 'Fuentes', icon: PhFolders },
-  { to: '/premios', label: 'Premios', icon: PhGift },
+  ui.owner ? { to: '/premios', label: 'Premios', icon: PhGift } : { to: '/camino', label: 'Camino', icon: PhPath },
   { to: '/historial', label: 'Historial', icon: PhClockCounterClockwise },
-]
+])
 </script>
 
 <template>

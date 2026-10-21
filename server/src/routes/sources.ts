@@ -1,23 +1,24 @@
 import { Router } from 'express'
 import multer from 'multer'
 import { z } from 'zod'
-import { CreateTextSourceSchema, CreateYoutubeSourceSchema, SOURCE_COLORS } from '@vetquiz/shared'
+import { CreateBlobSourceSchema, CreateTextSourceSchema, CreateYoutubeSourceSchema, SOURCE_COLORS } from '@vetquiz/shared'
 import { db } from '../db/client.js'
 import { sources } from '../db/schema.js'
 import { env } from '../env.js'
-import { Errors } from '../lib/errors.js'
+import { AppError, Errors } from '../lib/errors.js'
 import {
   createFileSource,
   createTextSource,
   createYoutubeSource,
   deleteSource,
+  getOwnSource,
   getSource,
   getSourceDTO,
   listSourceDTOs,
   retrySource,
   type CreateResult,
 } from '../services/sources.js'
-import { storage } from '../services/storage.js'
+import { fetchBlob, isBlobUrl, storage } from '../services/storage.js'
 import { eq } from 'drizzle-orm'
 
 export const sourcesRouter = Router()
@@ -27,7 +28,7 @@ const upload = multer({
   limits: { fileSize: env.UPLOAD_MAX_MB * 1024 * 1024, files: 1 },
 })
 
-const JsonSourceSchema = z.discriminatedUnion('kind', [CreateTextSourceSchema, CreateYoutubeSourceSchema])
+const JsonSourceSchema = z.discriminatedUnion('kind', [CreateTextSourceSchema, CreateYoutubeSourceSchema, CreateBlobSourceSchema])
 const IdSchema = z.string().uuid()
 const PatchSchema = z.object({
   title: z.string().trim().min(1).max(120).optional(),
@@ -46,6 +47,19 @@ const fixFilename = (name: string) => {
   return utf8.includes('�') ? name : utf8
 }
 
+/** Archivo que el celular subió directo a Vercel Blob: se trae, se registra como siempre y se borra el temporal */
+async function createFromBlob(url: string, filename: string, mimeType: string, title?: string): Promise<CreateResult> {
+  if (!isBlobUrl(url)) throw new AppError(400, 'BAD_UPLOAD', 'Ese archivo no viene de la subida de la app.')
+  const buffer = await fetchBlob(url)
+  if (buffer.length > env.UPLOAD_MAX_MB * 1024 * 1024) throw Errors.fileTooLarge(env.UPLOAD_MAX_MB)
+  try {
+    return await createFileSource({ originalname: filename, mimetype: mimeType, buffer }, title)
+  } finally {
+    const { del } = await import('@vercel/blob')
+    await del(url).catch(() => {})
+  }
+}
+
 async function respondCreated(res: import('express').Response, result: CreateResult) {
   res.status(result.deduplicated ? 200 : 202).json({
     source: await getSourceDTO(result.source.id),
@@ -56,13 +70,23 @@ async function respondCreated(res: import('express').Response, result: CreateRes
 // POST /api/sources — archivo (multipart) o JSON (texto / YouTube)
 sourcesRouter.post('/', upload.single('file'), async (req, res) => {
   if (req.file) {
-    const title = z.string().trim().min(1).max(120).optional().parse(req.body?.title || undefined)
+    const title = z
+      .string()
+      .trim()
+      .min(1)
+      .max(120)
+      .optional()
+      .parse(req.body?.title || undefined)
     const result = await createFileSource({ ...req.file, originalname: fixFilename(req.file.originalname) }, title)
     return respondCreated(res, result)
   }
   const body = JsonSourceSchema.parse(req.body)
   const result =
-    body.kind === 'text' ? await createTextSource(body.text, body.title) : await createYoutubeSource(body.url, body.title)
+    body.kind === 'text'
+      ? await createTextSource(body.text, body.title)
+      : body.kind === 'youtube'
+        ? await createYoutubeSource(body.url, body.title)
+        : await createFromBlob(body.url, body.filename, body.mimeType, body.title)
   return respondCreated(res, result)
 })
 
@@ -82,7 +106,7 @@ sourcesRouter.post('/:id/retry', async (req, res) => {
 sourcesRouter.patch('/:id', async (req, res) => {
   const id = parseId(req.params.id)
   const patch = PatchSchema.parse(req.body)
-  await getSource(id)
+  await getOwnSource(id)
   if (patch.title || patch.color) {
     await db
       .update(sources)
@@ -103,5 +127,5 @@ sourcesRouter.get('/:id/file', async (req, res) => {
   if (!source.storageKey || !source.mimeType) throw Errors.notFound('El archivo')
   res.setHeader('Content-Type', source.mimeType)
   res.setHeader('Cache-Control', 'private, max-age=31536000, immutable')
-  res.sendFile(storage.localPath(source.storageKey))
+  storage.send(res, source.storageKey)
 })

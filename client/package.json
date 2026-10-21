@@ -13,6 +13,7 @@
     "@fontsource-variable/bricolage-grotesque": "^5.2.0",
     "@fontsource-variable/plus-jakarta-sans": "^5.2.0",
     "@phosphor-icons/vue": "^2.2.1",
+    "@vercel/blob": "^2.8.2",
     "@vetquiz/shared": "*",
     "canvas-confetti": "^1.9.3",
     "howler": "^2.2.4",

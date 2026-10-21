@@ -120,7 +120,7 @@ const api = async <T>(method: string, url: string, body?: unknown): Promise<{ st
 async function waitReady(id: string): Promise<SourceDTO> {
   for (let i = 0; i < 300; i++) {
     const { body } = await api<{ source: SourceDTO }>('GET', `/sources/${id}`)
-    if (body.source.status !== 'processing') return body.source
+    if (body.source.status !== 'processing' && !body.source.filling) return body.source
     await new Promise((r) => setTimeout(r, 15))
   }
   throw new Error('timeout')
@@ -147,7 +147,7 @@ before(async () => {
   const text = 'Los AINEs inhiben la ciclooxigenasa. '.repeat(12)
   const { body } = await api<{ source: SourceDTO }>('POST', '/sources', { kind: 'text', text })
   const ready = await waitReady(body.source.id)
-  assert.equal(ready.bank.total, 48)
+  assert.equal(ready.bank.total, 50, 'carga rápida 16 + relleno 16 + 18')
   sourceId = ready.id
 })
 after(async () => {

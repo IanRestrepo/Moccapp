@@ -5,9 +5,12 @@ import { env } from './env.js'
 import { accessStatus, enterAccess, requireAccess } from './lib/access.js'
 import { AppError, errorHandler } from './lib/errors.js'
 import { examsRouter } from './routes/exams.js'
-import { adminRouter, rewardsRouter } from './routes/rewards.js'
+import { adminRouter, presenceRouter, rewardsRouter } from './routes/rewards.js'
 import { sourcesRouter } from './routes/sources.js'
 import { statsRouter } from './routes/stats.js'
+import { studyRouter } from './routes/study.js'
+import { uploadsRouter } from './routes/uploads.js'
+import { pathRouter } from './routes/path.js'
 
 export function createApp() {
   const app = express()
@@ -19,14 +22,18 @@ export function createApp() {
   app.use(express.json({ limit: '2mb' }))
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, model: env.GEMINI_MODEL }))
+  app.use('/api/uploads', uploadsRouter)
   app.use('/api', requireAccess)
   app.get('/api/access', accessStatus)
   app.post('/api/access', enterAccess)
   app.use('/api/sources', sourcesRouter)
   app.use('/api/exams', examsRouter)
   app.use('/api/stats', statsRouter)
+  app.use('/api/study', studyRouter)
+  app.use('/api/path', pathRouter)
   app.use('/api/rewards', rewardsRouter)
   app.use('/api/admin', adminRouter)
+  app.use('/api/presence', presenceRouter)
 
   app.use('/api', (_req, _res, next) => next(new AppError(404, 'NOT_FOUND', 'Ruta no encontrada.')))
 

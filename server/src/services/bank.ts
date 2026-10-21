@@ -2,12 +2,14 @@
 // abiertas) que llama a Gemini; los exámenes se arman desde el banco sin IA.
 import { eq, max } from 'drizzle-orm'
 import { db } from '../db/client.js'
+import { background } from '../lib/background.js'
 import { questionBank, sources, type GeminiFileRef, type Source } from '../db/schema.js'
 import { env } from '../env.js'
 import { getLlm, type Part } from '../ai/gemini.js'
 import { BANK_PROMPT_VERSION, BANK_SYSTEM_PROMPT, bankUserPrompt, expandUserPrompt } from '../ai/prompts.js'
 import {
-  INITIAL_BANK_PLANS,
+  FAST_BANK_PLAN,
+  FILL_BANK_PLANS,
   QuestionBankResponseSchema,
   parseQuestions,
   questionBankJsonSchema,
@@ -22,8 +24,6 @@ import { hashPrompt } from './ingest/hash.js'
 import { splitPdf } from './ingest/pdf-split.js'
 import { storage } from './storage.js'
 
-/** Si después del banco inicial quedan menos, se hace una llamada extra */
-const MIN_BANK = 15
 const log = (id: string, msg: string) => console.log(`[bank ${id.slice(0, 8)}] ${msg}`)
 
 // ── Fuente → partes para Gemini ──────────────────────────────
@@ -59,7 +59,12 @@ export async function buildSourceParts(source: Source): Promise<Part[]> {
   return refs.flatMap((r): Part[] => {
     const file: Part = { fileData: { fileUri: r.uri, mimeType: r.mimeType } }
     return r.fromPage
-      ? [{ text: `PDF original, páginas ${r.fromPage} a ${r.toPage}. La primera página de este archivo es la página ${r.fromPage} del original:` }, file]
+      ? [
+          {
+            text: `PDF original, páginas ${r.fromPage} a ${r.toPage}. La primera página de este archivo es la página ${r.fromPage} del original:`,
+          },
+          file,
+        ]
       : [file]
   })
 }
@@ -68,7 +73,9 @@ async function uploadToGemini(source: Source, split: boolean): Promise<GeminiFil
   const name = source.originalName ?? source.title
   const mimeType = source.mimeType!
   if (!split) {
-    const up = await withRetry(() => getLlm().uploadFile(storage.localPath(source.storageKey!), mimeType, name))
+    // se sube desde memoria (en Vercel no hay disco)
+    const file = new Blob([new Uint8Array(await storage.read(source.storageKey!))], { type: mimeType })
+    const up = await withRetry(() => getLlm().uploadFile(file, mimeType, name))
     return [{ uri: up.uri, mimeType: up.mimeType, expiresAt: up.expiresAt.toISOString() }]
   }
   const chunks = await splitPdf(await storage.read(source.storageKey!), env.GEMINI_PDF_CHUNK_MAX_MB * 1024 * 1024)
@@ -92,13 +99,14 @@ interface BatchResult {
   rejected: number
 }
 
-async function generateBatch(prompt: string, parts: Part[]): Promise<BatchResult> {
+async function generateBatch(prompt: string, parts: Part[], thinking: 'low' | 'default' = 'default'): Promise<BatchResult> {
   const raw = await getLlm().generateJson({
     system: BANK_SYSTEM_PROMPT,
     source: parts,
     prompt,
     jsonSchema: questionBankJsonSchema,
     temperature: 0.4,
+    thinking,
   })
   const parsed = QuestionBankResponseSchema.safeParse(raw)
   if (!parsed.success) throw new AppError(502, 'AI_BAD_SHAPE', Errors.aiFailed().message, true)
@@ -115,8 +123,8 @@ async function generateBatch(prompt: string, parts: Part[]): Promise<BatchResult
   }
 }
 
-const generateWithRetry = (sourceId: string, prompt: string, parts: Part[]) =>
-  withRetry(() => generateBatch(prompt, parts), {
+const generateWithRetry = (sourceId: string, prompt: string, parts: Part[], thinking: 'low' | 'default' = 'default') =>
+  withRetry(() => generateBatch(prompt, parts, thinking), {
     onRetry: (err, attempt, delay) => {
       const cause = err instanceof Error && err.cause instanceof Error ? ` · ${err.cause.message.slice(0, 160)}` : ''
       log(sourceId, `reintento ${attempt} en ${Math.round(delay)} ms (${err instanceof AppError ? err.code : err}${cause})`)
@@ -185,52 +193,77 @@ export async function insertQuestions(sourceId: string, questions: GeneratedQues
 }
 
 // ── Banco inicial ────────────────────────────────────────────
+// 1) Carga rápida: 16 preguntas con razonamiento bajo → la fuente queda lista para estudiar en ~1 min.
+// 2) Relleno en segundo plano hasta ~50 (ver FILL_BANK_PLANS); la app muestra "llegan más preguntas".
 
-async function generateInitialBank(sourceId: string): Promise<void> {
+/** Más de esto completando = el trabajo murió (reinicio, límite de Vercel): se deja de mostrar "llegan más" */
+const FILL_STALE_MS = 6 * 60_000
+/** ¿Está completando su banco en segundo plano? (ya se puede estudiar con lo que hay) */
+export const isFilling = (s: { fillingSince: Date | null }, now = Date.now()) =>
+  !!s.fillingSince && now - s.fillingSince.getTime() < FILL_STALE_MS
+const setFilling = (sourceId: string, on: boolean) =>
+  db
+    .update(sources)
+    .set({ fillingSince: on ? new Date() : null })
+    .where(eq(sources.id, sourceId))
+
+/** Devuelve true si quedó completando el banco en segundo plano */
+async function generateFastBank(sourceId: string): Promise<boolean> {
   const [source] = await db.select().from(sources).where(eq(sources.id, sourceId))
-  if (!source) return
+  if (!source) return false
   const started = Date.now()
   const parts = await buildSourceParts(source)
   const hint = source.titleLocked ? { title: source.title } : undefined
 
-  // 2 llamadas en paralelo (niveles 1–2 y 3–4): más rápido y menos riesgo de JSON cortado
-  const settled = await Promise.allSettled(
-    INITIAL_BANK_PLANS.map((plan) => generateWithRetry(sourceId, bankUserPrompt(plan, hint), parts)),
-  )
-  const ok = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
-  if (!ok.length) throw (settled[0] as PromiseRejectedResult).reason
-  if (ok.every((r) => r.insufficient || r.questions.length === 0)) throw Errors.noContent()
-
-  let total = 0
-  for (const r of ok) total += await insertQuestions(sourceId, r.questions, 0)
-
-  if (total < MIN_BANK) {
-    log(sourceId, `solo ${total} preguntas válidas; pidiendo más`)
-    const existing = await db.select({ prompt: questionBank.prompt }).from(questionBank).where(eq(questionBank.sourceId, sourceId))
-    const extra = await generateWithRetry(
-      sourceId,
-      expandUserPrompt({ byDifficulty: { 1: 6, 2: 6, 3: 6, 4: 6 }, byType: { multiple_choice: 14, true_false: 4, matching: 2, short_answer: 4 } }, existing.map((e) => e.prompt)),
-      parts,
-    ).catch(() => null)
-    if (extra) total += await insertQuestions(sourceId, extra.questions, 1)
-  }
+  const fast = await generateWithRetry(sourceId, bankUserPrompt(FAST_BANK_PLAN, hint), parts, 'low')
+  if (fast.insufficient || fast.questions.length === 0) throw Errors.noContent()
+  const total = await insertQuestions(sourceId, fast.questions, 0)
   if (total === 0) throw Errors.noContent()
 
-  const topics = mergeTopics(ok.flatMap((r) => r.topics))
-  const aiTitle = ok.find((r) => r.title.trim().length >= 3)?.title.trim()
+  const aiTitle = fast.title.trim().length >= 3 ? fast.title.trim() : undefined
   await db
     .update(sources)
     .set({
       status: 'ready',
+      // en el mismo paso que "lista": así la app sigue consultando hasta que llegue el resto
+      fillingSince: new Date(),
       errorMessage: null,
-      topics,
+      topics: mergeTopics(fast.topics),
       ...(!source.titleLocked && aiTitle ? { title: aiTitle } : {}),
       updatedAt: new Date(),
     })
     .where(eq(sources.id, sourceId))
+  log(sourceId, `lista para estudiar: ${total} preguntas en ${((Date.now() - started) / 1000).toFixed(1)} s; completando en segundo plano`)
+  return true
+}
 
-  const rejected = ok.reduce((s, r) => s + r.rejected, 0)
-  log(sourceId, `listo: ${total} preguntas (${rejected} descartadas por Zod) en ${((Date.now() - started) / 1000).toFixed(1)} s`)
+/** Completa el banco en segundo plano. Si falla, la fuente sigue lista con lo que tiene (los exámenes amplían si falta). */
+async function fillBank(sourceId: string): Promise<void> {
+  const started = Date.now()
+  try {
+    const [source] = await db.select().from(sources).where(eq(sources.id, sourceId))
+    if (!source) return
+    const parts = await buildSourceParts(source)
+    const existing = (await db.select({ prompt: questionBank.prompt }).from(questionBank).where(eq(questionBank.sourceId, sourceId))).map(
+      (e) => e.prompt,
+    )
+    const settled = await Promise.allSettled(
+      FILL_BANK_PLANS.map(({ plan, thinking }) => generateWithRetry(sourceId, expandUserPrompt(plan, existing), parts, thinking)),
+    )
+    const ok = settled.flatMap((r) => (r.status === 'fulfilled' ? [r.value] : []))
+    let added = 0
+    for (const r of ok) added += await insertQuestions(sourceId, r.questions, 1)
+    if (ok.length)
+      await db
+        .update(sources)
+        .set({ topics: mergeTopics([...source.topics, ...ok.flatMap((r) => r.topics)]), updatedAt: new Date() })
+        .where(eq(sources.id, sourceId))
+    log(sourceId, `banco completo: +${added} preguntas en ${((Date.now() - started) / 1000).toFixed(1)} s`)
+  } catch (err) {
+    log(sourceId, `no se pudo completar el banco en segundo plano: ${err instanceof AppError ? err.code : err}`)
+  } finally {
+    await setFilling(sourceId, false).catch(() => {})
+  }
 }
 
 // ── Ampliación (cuando un examen pide más de lo que hay) ─────
@@ -238,10 +271,7 @@ async function generateInitialBank(sourceId: string): Promise<void> {
 export async function expandBank(sourceId: string, plan: GenerationPlan): Promise<number> {
   const [source] = await db.select().from(sources).where(eq(sources.id, sourceId))
   if (!source) throw Errors.notFound('La fuente')
-  const existing = await db
-    .select({ prompt: questionBank.prompt })
-    .from(questionBank)
-    .where(eq(questionBank.sourceId, sourceId))
+  const existing = await db.select({ prompt: questionBank.prompt }).from(questionBank).where(eq(questionBank.sourceId, sourceId))
   const [last] = await db
     .select({ batch: max(questionBank.generationBatch) })
     .from(questionBank)
@@ -249,7 +279,14 @@ export async function expandBank(sourceId: string, plan: GenerationPlan): Promis
   const batch = last?.batch ?? 0
 
   const parts = await buildSourceParts(source)
-  const result = await generateWithRetry(sourceId, expandUserPrompt(plan, existing.map((e) => e.prompt)), parts)
+  const result = await generateWithRetry(
+    sourceId,
+    expandUserPrompt(
+      plan,
+      existing.map((e) => e.prompt),
+    ),
+    parts,
+  )
   const inserted = await insertQuestions(sourceId, result.questions, batch + 1)
   log(sourceId, `ampliado: +${inserted} preguntas`)
   return inserted
@@ -272,12 +309,15 @@ export function expandBankOnce(sourceId: string, plan: GenerationPlan): Promise<
 /** Ampliación en segundo plano: el examen actual no espera; el próximo ya tendrá preguntas nuevas. */
 export function queueExpansion(sourceId: string, plan: GenerationPlan): void {
   if (expanding.has(sourceId)) return
-  expandBankOnce(sourceId, plan).catch((err) => log(sourceId, `ampliación de fondo falló: ${err instanceof AppError ? err.code : err}`))
+  background(
+    expandBankOnce(sourceId, plan).catch((err) => log(sourceId, `ampliación de fondo falló: ${err instanceof AppError ? err.code : err}`)),
+  )
 }
 
 // ── Cola en segundo plano ────────────────────────────────────
 
 const running = new Map<string, Promise<void>>()
+export const isRunning = (sourceId: string) => running.has(sourceId)
 
 /**
  * Máximo 2 fuentes generándose a la vez (cada una hace 2 llamadas en paralelo). Si sube 5 presentaciones
@@ -301,18 +341,26 @@ async function withSlot<T>(fn: () => Promise<T>): Promise<T> {
 export function queueGeneration(sourceId: string): Promise<void> {
   const current = running.get(sourceId)
   if (current) return current
-  const job = withSlot(() => generateInitialBank(sourceId))
+  let fill: Promise<void> | undefined
+  const job = withSlot(() => generateFastBank(sourceId))
+    .then((filling) => {
+      // el relleno espera su turno DESPUÉS de las cargas rápidas ya encoladas: con varios archivos,
+      // todos quedan listos para estudiar antes de que empiece a completarse cualquiera
+      if (filling) fill = withSlot(() => fillBank(sourceId))
+    })
     .catch(async (err) => {
       const appErr = err instanceof AppError ? err : Errors.aiFailed()
       if (!(err instanceof AppError)) console.error(err)
       log(sourceId, `error: ${appErr.code}`)
       await db
         .update(sources)
-        .set({ status: 'error', errorMessage: appErr.message, updatedAt: new Date() })
+        .set({ status: 'error', errorMessage: appErr.message, fillingSince: null, updatedAt: new Date() })
         .where(eq(sources.id, sourceId))
     })
     .finally(() => running.delete(sourceId))
   running.set(sourceId, job)
+  // en Vercel: que la función siga viva hasta terminar la carga rápida Y el relleno
+  background(job.then(() => fill))
   return job
 }
 

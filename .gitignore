@@ -7,3 +7,4 @@ server/uploads
 server/.data
 docs/muestra-banco-anatomia.txt
 client/dev-dist
+.vercel

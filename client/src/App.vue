@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from 'vue'
+import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import type { PresenceView } from '@vetquiz/shared'
 import { MotionConfig } from 'motion-v'
 import BottomNav from '@/components/BottomNav.vue'
 import NewSourceSheet from '@/components/source/NewSourceSheet.vue'
 import AccessGate from '@/components/AccessGate.vue'
+import MoccaLove from '@/components/mascot/MoccaLove.vue'
 import { api, LOCKED_EVENT } from '@/api/client'
 import { useSourcesStore } from '@/stores/sources'
 import { useStatsStore } from '@/stores/stats'
+import { useUiStore } from '@/stores/ui'
 
 // En la nube la API pide código de acceso; en local nunca aparece
 const locked = ref(false)
 const lock = () => (locked.value = true)
 // Al volver a la app (otra pestaña, celular bloqueado…) se refrescan fuentes y stats: nada queda viejo
 const sources = useSourcesStore()
+const ui = useUiStore()
 const stats = useStatsStore()
 function refreshOnReturn() {
   if (document.visibilityState !== 'visible' || locked.value) return
@@ -22,10 +27,49 @@ function refreshOnReturn() {
 onMounted(() => document.addEventListener('visibilitychange', refreshOnReturn))
 onBeforeUnmount(() => document.removeEventListener('visibilitychange', refreshOnReturn))
 
+// Señal de vida para el panel del administrador: cada 30 s mientras la app está visible
+const route = useRoute()
+const PING_MS = 30_000
+function viewOf(path: string): PresenceView {
+  if (path === '/') return 'home'
+  const map: [string, PresenceView][] = [
+    ['/fuentes', 'sources'],
+    ['/configurar', 'configure'],
+    ['/estudiar', 'study'],
+    ['/camino', 'path'],
+    ['/leccion/', 'lesson'],
+    ['/examen/', 'exam'],
+    ['/resultados/', 'results'],
+    ['/historial', 'history'],
+    ['/premios', 'rewards'],
+    ['/mocca', 'mocca'],
+  ]
+  return map.find(([p]) => path.startsWith(p))?.[1] ?? 'other'
+}
+function ping() {
+  if (document.visibilityState !== 'visible' || locked.value || route.path.startsWith('/admin')) return
+  api.ping(viewOf(route.path)).catch(() => {})
+}
+let pingTimer = 0
+onMounted(() => {
+  pingTimer = window.setInterval(ping, PING_MS)
+  document.addEventListener('visibilitychange', ping)
+})
+onBeforeUnmount(() => {
+  clearInterval(pingTimer)
+  document.removeEventListener('visibilitychange', ping)
+})
+watch(() => route.path, ping)
+
 onMounted(async () => {
   window.addEventListener(LOCKED_EVENT, lock)
   const status = await api.accessStatus().catch(() => null)
   if (status?.required && !status.granted) locked.value = true
+  if (status) {
+    ui.owner = status.owner !== false
+    ui.profileName = status.name ?? null
+  }
+  ping()
 })
 onBeforeUnmount(() => window.removeEventListener(LOCKED_EVENT, lock))
 </script>
@@ -38,6 +82,8 @@ onBeforeUnmount(() => window.removeEventListener(LOCKED_EVENT, lock))
       <RouterView />
       <BottomNav v-if="$route.meta.nav" />
       <NewSourceSheet />
+      <!-- el mensaje de amor es para Ash -->
+      <MoccaLove v-if="ui.owner" />
     </template>
   </MotionConfig>
 </template>

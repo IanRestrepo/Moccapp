@@ -33,7 +33,7 @@ const { PDFDocument } = await import('pdf-lib')
 
 let callCounter = 0
 const calls: GenerateJsonParams[] = []
-const uploads: string[] = []
+const uploads: unknown[] = []
 
 function fakeQuestion(i: number, difficulty: number) {
   const base = {
@@ -126,10 +126,11 @@ async function postFile(name: string, type: string, data: Buffer | Uint8Array, t
   return fetch(`${base}/sources`, { method: 'POST', body: form })
 }
 
-async function waitDone(id: string): Promise<SourceDTO> {
+/** Espera a que termine; por defecto también el relleno en segundo plano (full = false: solo la carga rápida) */
+async function waitDone(id: string, full = true): Promise<SourceDTO> {
   for (let i = 0; i < 200; i++) {
     const { source } = (await (await fetch(`${base}/sources/${id}`)).json()) as { source: SourceDTO }
-    if (source.status !== 'processing') return source
+    if (source.status !== 'processing' && (!full || !source.filling)) return source
     await new Promise((r) => setTimeout(r, 20))
   }
   throw new Error('timeout esperando la generación')
@@ -171,6 +172,11 @@ describe('texto pegado', () => {
 
   test('crea la fuente (202), genera el banco y reemplaza el título con el de la IA', async () => {
     const before = calls.length
+    // como en la realidad, el relleno tarda más que la carga rápida
+    behavior = async (p) => {
+      if (p.prompt.includes('NO las repitas')) await new Promise((r) => setTimeout(r, 300))
+      return goodBatch()
+    }
     const res = await postJson({ kind: 'text', text: LONG_TEXT })
     assert.equal(res.status, 202)
     const body = (await res.json()) as { source: SourceDTO; deduplicated: boolean }
@@ -178,13 +184,22 @@ describe('texto pegado', () => {
     assert.equal(body.source.status, 'processing')
     id = body.source.id
 
+    // 1) carga rápida: ya se puede estudiar y sigue llegando más
+    const quick = await waitDone(id, false)
+    assert.equal(quick.status, 'ready')
+    assert.equal(quick.filling, true, 'la app sabe que siguen llegando preguntas')
+    assert.equal(quick.bank.total, 24, 'las válidas de la carga rápida; las dañadas se descartan')
+    assert.equal(calls[before]!.thinking, 'low', 'la carga rápida razona poco para responder rápido')
+
+    // 2) relleno en segundo plano: niveles fáciles con razonamiento bajo, difíciles con el completo
     const done = await waitDone(id)
-    assert.equal(done.status, 'ready')
+    assert.equal(done.filling, false)
     assert.equal(done.title, 'AINEs en caninos')
-    assert.equal(calls.length - before, 2, 'dos llamadas en paralelo (niveles 1–2 y 3–4)')
-    assert.equal(done.bank.total, 48, '24 + 24 válidas; las dañadas se descartan')
-    assert.deepEqual(done.bank.byDifficulty, { 1: 12, 2: 12, 3: 12, 4: 12 })
-    assert.equal(done.bank.byType.matching, 12)
+    assert.equal(calls.length - before, 3, '1 rápida + 2 de relleno')
+    assert.deepEqual(calls.slice(before + 1).map((c) => c.thinking).sort(), ['default', 'low'])
+    assert.equal(done.bank.total, 72)
+    assert.deepEqual(done.bank.byDifficulty, { 1: 18, 2: 18, 3: 18, 4: 18 })
+    assert.equal(done.bank.byType.matching, 18)
     assert.deepEqual(done.topics, ['Farmacología', 'AINEs'])
     assert.equal(done.format, 'text')
     assert.match(done.excerpt!, /^Los antiinflamatorios/)

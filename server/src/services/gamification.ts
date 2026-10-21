@@ -6,6 +6,7 @@ import { userStats, type UserStats } from '../db/schema.js'
 import { env } from '../env.js'
 import { MOTIVATION } from '../ai/prompts.js'
 import { ensureRewardsSetup } from './rewards.js'
+import { displayNameFor, isOwner, statsIdFor } from '../lib/profile.js'
 
 /** Fecha local YYYY-MM-DD en la zona de la app (Bogotá): la racha cuenta días de ella, no UTC. */
 export function localDate(d: Date, timeZone = env.APP_TIMEZONE): string {
@@ -50,8 +51,9 @@ export function motivationFor(score: number, rng = Math.random): string {
 }
 
 export async function getStatsRow(): Promise<UserStats> {
-  await db.insert(userStats).values({ id: 1 }).onConflictDoNothing()
-  const [row] = await db.select().from(userStats).where(eq(userStats.id, 1))
+  const id = statsIdFor()
+  await db.insert(userStats).values({ id, displayName: displayNameFor() }).onConflictDoNothing()
+  const [row] = await db.select().from(userStats).where(eq(userStats.id, id))
   return row!
 }
 
@@ -76,7 +78,8 @@ export async function recordCompletedExam(p: {
     today,
   )
   const xp = computeXp({ ...p, firstOfDay: next.extendedToday, streak: next.currentStreak })
-  const bones = computeBones({ ...p, firstOfDay: next.extendedToday, streak: next.currentStreak })
+  // huesitos: solo Ash
+  const bones = isOwner() ? computeBones({ ...p, firstOfDay: next.extendedToday, streak: next.currentStreak }) : 0
   const activeDates = [...new Set([...row.activeDates, today])].sort().slice(-60)
 
   await db
@@ -91,9 +94,34 @@ export async function recordCompletedExam(p: {
       activeDates,
       updatedAt: new Date(),
     })
-    .where(eq(userStats.id, 1))
+    .where(eq(userStats.id, statsIdFor()))
 
   return { xp, bones, streak: { current: next.currentStreak, extendedToday: next.extendedToday } }
+}
+
+/** Lección del camino: suma XP y huesitos y cuenta para la racha (no cuenta como examen). */
+export async function recordActivity(p: { xp: number; bones: number; at?: Date }) {
+  await ensureRewardsSetup()
+  p = { ...p, bones: isOwner() ? p.bones : 0 }
+  const row = await getStatsRow()
+  const today = localDate(p.at ?? new Date())
+  const next = nextStreak({ currentStreak: row.currentStreak, longestStreak: row.longestStreak, lastActiveDate: row.lastActiveDate }, today)
+  // primer logro del día: el mismo bono de racha que en los exámenes
+  const streakXp = next.extendedToday ? 10 * Math.min(next.currentStreak, 7) : 0
+  const xp = p.xp + streakXp
+  await db
+    .update(userStats)
+    .set({
+      totalXp: sql`${userStats.totalXp} + ${xp}`,
+      bonesEarned: sql`${userStats.bonesEarned} + ${p.bones}`,
+      currentStreak: next.currentStreak,
+      longestStreak: next.longestStreak,
+      lastActiveDate: next.lastActiveDate,
+      activeDates: [...new Set([...row.activeDates, today])].sort().slice(-60),
+      updatedAt: new Date(),
+    })
+    .where(eq(userStats.id, statsIdFor()))
+  return { xp, bones: p.bones, streak: { current: next.currentStreak, extendedToday: next.extendedToday } }
 }
 
 /** `bones` = saldo de huesitos (lo calcula rewards.bonesBalance, que consulta los canjes) */

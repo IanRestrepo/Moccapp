@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { PhArrowLeft, PhCheck, PhEye, PhEyeSlash, PhLockKey, PhPlus, PhTrash, PhX } from '@phosphor-icons/vue'
-import { REWARD_STICKERS, type AdminRewardsDTO, type RewardDTO, type RewardSticker } from '@vetquiz/shared'
+import { REWARD_STICKERS, type AdminRewardsDTO, type AdminPresenceDTO, type PresenceView, type RewardDTO, type RewardSticker } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
@@ -27,12 +27,51 @@ async function load() {
   const status = await api.adminStatus().catch(() => null)
   if (status?.disabled) return void (state.value = 'disabled')
   if (!status?.granted) return void (state.value = 'login')
-  data.value = await api.adminRewards()
+  ;[data.value] = await Promise.all([api.adminRewards(), loadPresence()])
   drafts.clear()
   for (const r of data.value.rewards) drafts.set(r.id, { ...r })
   state.value = 'ready'
 }
 onMounted(load)
+
+// ── ¿Está usando la app? ─────────────────────────────────────
+const presence = ref<AdminPresenceDTO | null>(null)
+const now = ref(Date.now())
+const VIEW_LABEL: Record<PresenceView, string> = {
+  home: 'en Inicio',
+  sources: 'viendo sus fuentes',
+  configure: 'armando un examen',
+  study: 'estudiando con tarjetas',
+  path: 'mirando su camino',
+  lesson: 'haciendo una lección',
+  exam: 'haciendo un examen',
+  results: 'viendo resultados',
+  history: 'en el historial',
+  rewards: 'mirando premios',
+  mocca: 'jugando con Mocca',
+  other: 'en la app',
+}
+const timeFmt = new Intl.DateTimeFormat('es-CO', { hour: 'numeric', minute: '2-digit' })
+function ago(iso: string): string {
+  const min = Math.floor((now.value - new Date(iso).getTime()) / 60_000)
+  if (min < 1) return 'hace un momento'
+  if (min < 60) return `hace ${min} min`
+  const h = Math.floor(min / 60)
+  if (h < 24) return `hace ${h} h`
+  const d = Math.floor(h / 24)
+  return `hace ${d} ${d === 1 ? 'día' : 'días'}`
+}
+function lastSeenText(at: string | null) {
+  if (!at) return 'todavía no ha abierto la app.'
+  return `${ago(at)} · ${relativeDay(at)} a las ${timeFmt.format(new Date(at))}`
+}
+async function loadPresence() {
+  now.value = Date.now()
+  presence.value = await api.adminPresence().catch(() => presence.value)
+}
+let presenceTimer = 0
+onMounted(() => (presenceTimer = window.setInterval(() => state.value === 'ready' && loadPresence(), 20_000)))
+onBeforeUnmount(() => clearInterval(presenceTimer))
 
 async function login() {
   try {
@@ -147,6 +186,27 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
     </form>
 
     <template v-else-if="state === 'ready' && data">
+      <!-- presencia: Ash y las invitadas -->
+      <section
+        v-for="person in presence?.people ?? []"
+        :key="person.profile"
+        class="mt-3 flex items-center gap-3 rounded-[20px] bg-surface p-4 ring-1 ring-line"
+      >
+        <span class="relative grid size-11 shrink-0 place-items-center">
+          <span v-if="person.online" class="absolute inset-0 animate-ping rounded-full bg-mint/40" />
+          <span :class="['relative size-4 rounded-full', person.online ? 'bg-mint' : 'bg-ink-3/40']" />
+        </span>
+        <span class="min-w-0 flex-1">
+          <span class="block font-display text-[17px] font-bold">
+            {{ person.name }} · {{ person.online ? `en línea, ${VIEW_LABEL[person.view ?? 'other']}` : 'no está en la app' }}
+          </span>
+          <span class="block text-[13px] text-ink-2">
+            <template v-if="person.online">Ahora mismo{{ person.device ? ` · desde ${person.device}` : '' }}</template>
+            <template v-else>Última vez: {{ lastSeenText(person.lastSeenAt) }}{{ person.device ? ` · ${person.device}` : '' }}</template>
+          </span>
+        </span>
+      </section>
+
       <p class="mt-2 text-[14px] font-medium text-ink-2">
         Saldo: <b class="text-ink">{{ bonesText(data.balance) }}</b> huesitos · ganados en total {{ bonesText(data.earnedTotal) }}
       </p>

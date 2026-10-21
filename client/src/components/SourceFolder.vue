@@ -68,6 +68,9 @@ const excerpt = computed(() => props.source.excerpt?.replace(/Diapositiva \d+:\s
         <span v-else-if="failed" class="flex items-center gap-1 opacity-80">
           <PhArrowsClockwise :size="14" weight="bold" /> Toca para reintentar
         </span>
+        <span v-else-if="source.filling" class="flex items-center gap-1.5 opacity-80">
+          <span class="size-2 animate-pulse rounded-full bg-[#16141c]" /> {{ source.bank.total }} · llegan más
+        </span>
         <span v-else class="opacity-70">{{ source.bank.total }} preguntas</span>
         <span class="grid size-7 shrink-0 place-items-center rounded-full bg-white/55">
           <component :is="icon" :size="16" weight="bold" />

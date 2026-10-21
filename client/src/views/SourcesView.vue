@@ -62,6 +62,7 @@ async function remove(id: string) {
       <div v-for="s in sources.list" :key="s.id" class="relative">
         <SourceFolder :source="s" @click="open(s)" />
         <button
+          v-if="s.mine"
           class="absolute right-1 top-0 grid size-9 place-items-center rounded-full text-on-color/80 hover:bg-white/40"
           :aria-label="`Opciones de ${s.title}`"
           :aria-expanded="menuFor === s.id"

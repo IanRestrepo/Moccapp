@@ -191,14 +191,26 @@ export interface GenerationPlan {
   byType: Partial<Record<QuestionType, number>>
 }
 
-/** Banco inicial: 48 preguntas, en 2 llamadas paralelas de 24 (más rápido y menos riesgo de JSON cortado). */
-export const INITIAL_BANK_PLANS: GenerationPlan[] = [
+/**
+ * Carga rápida: 16 preguntas de todos los niveles con razonamiento bajo. Apenas llegan, la fuente queda lista
+ * para estudiar (≈ 30–60 s en vez de 3–4 min).
+ */
+export const FAST_BANK_PLAN: GenerationPlan = {
+  byDifficulty: { 1: 5, 2: 5, 3: 3, 4: 3 },
+  byType: { multiple_choice: 9, true_false: 3, matching: 2, short_answer: 2 },
+}
+
+/**
+ * Resto del banco en segundo plano (≈ 50 en total). Niveles 1–2 con razonamiento bajo (son de memoria y
+ * comprensión); 3–4 con razonamiento completo para que los casos tipo parcial sigan siendo buenos.
+ */
+export const FILL_BANK_PLANS: { plan: GenerationPlan; thinking: 'low' | 'default' }[] = [
   {
-    byDifficulty: { 1: 12, 2: 12 },
-    byType: { multiple_choice: 12, true_false: 6, matching: 3, short_answer: 3 },
+    plan: { byDifficulty: { 1: 8, 2: 8 }, byType: { multiple_choice: 8, true_false: 4, matching: 2, short_answer: 2 } },
+    thinking: 'low',
   },
   {
-    byDifficulty: { 3: 12, 4: 12 },
-    byType: { multiple_choice: 14, true_false: 2, matching: 3, short_answer: 5 },
+    plan: { byDifficulty: { 3: 9, 4: 9 }, byType: { multiple_choice: 11, true_false: 1, matching: 2, short_answer: 4 } },
+    thinking: 'default',
   },
 ]

@@ -8,6 +8,7 @@ import {
   jsonb,
   pgEnum,
   pgTable,
+  primaryKey,
   real,
   smallint,
   text,
@@ -60,11 +61,15 @@ export const sources = pgTable(
   {
     id: uuid('id').primaryKey().defaultRandom(),
     title: text('title').notNull(),
+    /** Perfil que la subió; las invitadas ven también las de la dueña */
+    owner: text('owner').notNull().default('ash'),
     /** true si ella escribió o editó el título: la IA no lo reemplaza */
     titleLocked: boolean('title_locked').notNull().default(false),
     kind: sourceKind('kind').notNull(),
     color: sourceColor('color').notNull(),
     status: sourceStatus('status').notNull().default('processing'),
+    /** Completando el banco en segundo plano desde esta hora (null = no). En la base y no en memoria: en Vercel cada petición puede caer en otra instancia */
+    fillingSince: timestamp('filling_since', { withTimezone: true }),
     errorMessage: text('error_message'),
 
     /** sha256 de los bytes del archivo / texto normalizado / id del video de YouTube */
@@ -149,6 +154,8 @@ export const exams = pgTable(
       .references(() => sources.id, { onDelete: 'cascade' }),
     /** Todas las fuentes del examen (sourceId es la primera). Varias = examen que mezcla presentaciones */
     sourceIds: jsonb('source_ids').$type<string[]>().notNull().default([]),
+    /** Perfil que lo presentó */
+    profile: text('profile').notNull().default('ash'),
     mode: examMode('mode').notNull().default('normal'),
     /** Examen del que salieron las preguntas falladas (modo retry_failed) */
     parentExamId: uuid('parent_exam_id').references((): AnyPgColumn => exams.id, { onDelete: 'set null' }),
@@ -233,9 +240,13 @@ export const userStats = pgTable(
     bonesEarned: integer('bones_earned').notNull().default(0),
     /** Ya se abonaron los huesitos de los exámenes hechos antes de que existieran los premios */
     bonesBackfilled: boolean('bones_backfilled').notNull().default(false),
+    /** Última señal de vida de la app de Ashley (no cuenta al administrador) */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
+    lastSeenView: text('last_seen_view'),
+    lastSeenDevice: text('last_seen_device'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [check('single_row', sql`${t.id} = 1`)],
+  // una fila por perfil: 1 = Ash (la de siempre), 2… = invitadas (ver lib/profile.ts)
 )
 
 // ── rewards / redemptions ────────────────────────────────────
@@ -280,4 +291,19 @@ export type BankQuestion = typeof questionBank.$inferSelect
 export type NewBankQuestion = typeof questionBank.$inferInsert
 export type Exam = typeof exams.$inferSelect
 export type ExamAnswer = typeof examAnswers.$inferSelect
+// ── path_progress ────────────────────────────────────────────
+// Camino tipo Duolingo: un registro por nodo completado (lección o cofre). node_key = "<sourceId>:<n>" o "<sourceId>:chest".
+export const pathProgress = pgTable(
+  'path_progress',
+  {
+    profile: text('profile').notNull().default('ash'),
+    nodeKey: text('node_key').notNull(),
+    /** 1–3 según aciertos a la primera; los cofres guardan 3 */
+    stars: smallint('stars').notNull(),
+    attempts: integer('attempts').notNull().default(1),
+    completedAt: timestamp('completed_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.profile, t.nodeKey] })],
+)
+
 export type UserStats = typeof userStats.$inferSelect

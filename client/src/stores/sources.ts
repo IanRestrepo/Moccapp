@@ -17,7 +17,7 @@ export const useSourcesStore = defineStore('sources', () => {
     const i = list.value.findIndex((s) => s.id === source.id)
     if (i === -1) list.value.unshift(source)
     else list.value[i] = source
-    if (source.status === 'processing') watchProcessing(source.id)
+    if (source.status === 'processing' || source.filling) watchProcessing(source.id)
   }
 
   function remove(id: string) {
@@ -28,7 +28,7 @@ export const useSourcesStore = defineStore('sources', () => {
     const sources = await api.listSources()
     list.value = sources
     loaded.value = true
-    sources.filter((s) => s.status === 'processing').forEach((s) => watchProcessing(s.id))
+    sources.filter((s) => s.status === 'processing' || s.filling).forEach((s) => watchProcessing(s.id))
   }
 
   function watchProcessing(id: string) {
@@ -37,7 +37,8 @@ export const useSourcesStore = defineStore('sources', () => {
       try {
         const s = await api.getSource(id)
         upsert(s)
-        if (s.status !== 'processing') return void pollers.delete(id)
+        // sigue consultando mientras procesa o mientras llegan más preguntas en segundo plano
+        if (s.status !== 'processing' && !s.filling) return void pollers.delete(id)
       } catch {
         // red caída: se sigue intentando
       }

@@ -202,6 +202,7 @@ const scoreColor = computed(() => {
         Racha de {{ result.streak.current }} {{ result.streak.current === 1 ? 'día' : 'días' }}{{ result.streak.extendedToday ? ' · ¡sumaste hoy!' : '' }}
       </p>
       <RouterLink
+        v-if="result.bonesEarned"
         to="/premios"
         class="mx-auto mt-3 flex w-fit items-center gap-1.5 rounded-full bg-yellow-tint px-4 py-2 text-[14px] font-bold"
       >
