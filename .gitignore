@@ -10,3 +10,8 @@ client/dev-dist
 .vercel
 vercel-env.txt
 .env*.local
+.env*
+scripts-vercel-env.sh
+.agents/
+.claude/skills/
+skills-lock.json
