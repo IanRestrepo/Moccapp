@@ -3,6 +3,7 @@
 import { eq, max } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { background } from '../lib/background.js'
+import { sendPush } from './push.js'
 import { questionBank, sources, type GeminiFileRef, type Source } from '../db/schema.js'
 import { env } from '../env.js'
 import { getLlm, type Part } from '../ai/gemini.js'
@@ -233,6 +234,11 @@ async function generateFastBank(sourceId: string): Promise<boolean> {
       updatedAt: new Date(),
     })
     .where(eq(sources.id, sourceId))
+  const title = !source.titleLocked && aiTitle ? aiTitle : source.title
+  await sendPush(
+    { profile: source.owner },
+    { title: '¡Lista para estudiar! 📚', body: `"${title}" ya tiene ${total} preguntas. Mocca te espera.`, url: '/#/fuentes', tag: `fuente-${sourceId}` },
+  )
   log(sourceId, `lista para estudiar: ${total} preguntas en ${((Date.now() - started) / 1000).toFixed(1)} s; completando en segundo plano`)
   return true
 }

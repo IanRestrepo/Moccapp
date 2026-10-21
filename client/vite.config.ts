@@ -11,11 +11,15 @@ export default defineConfig({
     VitePWA({
       registerType: 'autoUpdate',
       manifest: {
-        name: 'VetQuiz · Exámenes con Mocca',
-        short_name: 'VetQuiz',
+        id: '/',
+        name: 'Moccapp · Estudia con Mocca',
+        short_name: 'Moccapp',
+        description: 'Exámenes, tarjetas y un camino de lecciones con Mocca.',
+        scope: '/',
+        orientation: 'portrait',
         lang: 'es-CO',
-        theme_color: '#F6F2EC',
-        background_color: '#F6F2EC',
+        theme_color: '#121019',
+        background_color: '#121019',
         display: 'standalone',
         start_url: '/',
         icons: [
@@ -27,6 +31,8 @@ export default defineConfig({
       workbox: {
         // la API nunca se cachea: los exámenes y el banco siempre vienen frescos del servidor
         navigateFallbackDenylist: [/^\/api/],
+        // avisos push (public/push-sw.js)
+        importScripts: ['push-sw.js'],
         globPatterns: ['**/*.{js,css,html,svg,png,woff2,wav}'],
       },
     }),

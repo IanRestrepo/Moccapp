@@ -10,6 +10,7 @@ import { sourcesRouter } from './routes/sources.js'
 import { statsRouter } from './routes/stats.js'
 import { studyRouter } from './routes/study.js'
 import { uploadsRouter } from './routes/uploads.js'
+import { cronRouter, pushRouter } from './routes/push.js'
 import { pathRouter } from './routes/path.js'
 
 export function createApp() {
@@ -23,6 +24,7 @@ export function createApp() {
 
   app.get('/api/health', (_req, res) => res.json({ ok: true, model: env.GEMINI_MODEL }))
   app.use('/api/uploads', uploadsRouter)
+  app.use('/api/cron', cronRouter)
   app.use('/api', requireAccess)
   app.get('/api/access', accessStatus)
   app.post('/api/access', enterAccess)
@@ -31,6 +33,7 @@ export function createApp() {
   app.use('/api/stats', statsRouter)
   app.use('/api/study', studyRouter)
   app.use('/api/path', pathRouter)
+  app.use('/api/push', pushRouter)
   app.use('/api/rewards', rewardsRouter)
   app.use('/api/admin', adminRouter)
   app.use('/api/presence', presenceRouter)

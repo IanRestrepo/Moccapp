@@ -4,6 +4,7 @@ import { useRouter } from 'vue-router'
 import { PhArrowRight, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun } from '@phosphor-icons/vue'
 import { EXAM_LEVEL_LABELS, type ExamHistoryItemDTO, type SourceDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
+import PhoneCard from '@/components/PhoneCard.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
 import SourceFolder from '@/components/SourceFolder.vue'
@@ -150,6 +151,9 @@ function startExam() {
       </span>
       <PhArrowRight :size="20" weight="bold" />
     </RouterLink>
+
+    <!-- Instalar en el celular / activar avisos -->
+    <PhoneCard />
 
     <!-- Semana -->
     <ol v-if="stats" class="mt-4 grid grid-cols-7 gap-1.5" aria-label="Racha de la semana">

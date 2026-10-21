@@ -306,4 +306,15 @@ export const pathProgress = pgTable(
   (t) => [primaryKey({ columns: [t.profile, t.nodeKey] })],
 )
 
+// ── push_subscriptions ───────────────────────────────────────
+// Un registro por celular/navegador que activó los avisos. admin = el del administrador (avisos de premios).
+export const pushSubscriptions = pgTable('push_subscriptions', {
+  endpoint: text('endpoint').primaryKey(),
+  profile: text('profile').notNull(),
+  admin: boolean('admin').notNull().default(false),
+  p256dh: text('p256dh').notNull(),
+  auth: text('auth').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+})
+
 export type UserStats = typeof userStats.$inferSelect

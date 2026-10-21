@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhArrowLeft, PhCheck, PhEye, PhEyeSlash, PhLockKey, PhPlus, PhTrash, PhX } from '@phosphor-icons/vue'
+import { PhArrowLeft, PhBell, PhCheck, PhEye, PhEyeSlash, PhLockKey, PhPlus, PhTrash, PhX } from '@phosphor-icons/vue'
 import { REWARD_STICKERS, type AdminRewardsDTO, type AdminPresenceDTO, type PresenceView, type RewardDTO, type RewardSticker } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { relativeDay } from '@/lib/format'
+import { usePhone } from '@/composables/usePhone'
 import { REWARD_STICKER_LABEL, REWARD_TINT, bonesText } from '@/lib/rewards'
 
 /** Página del administrador: entregar premios, editarlos y regalar huesitos. Protegida con ADMIN_CODE. */
@@ -72,6 +73,24 @@ async function loadPresence() {
 let presenceTimer = 0
 onMounted(() => (presenceTimer = window.setInterval(() => state.value === 'ready' && loadPresence(), 20_000)))
 onBeforeUnmount(() => clearInterval(presenceTimer))
+
+// ── Avisos al administrador (premios reclamados) ─────────────
+const phone = usePhone()
+const adminPush = ref<'idle' | 'busy' | 'ok'>('idle')
+async function enableAdminPush() {
+  adminPush.value = 'busy'
+  try {
+    const r = await phone.enablePush(true)
+    if (r === 'ok') adminPush.value = 'ok'
+    else {
+      adminPush.value = 'idle'
+      say(false, r === 'denied' ? 'Los avisos están bloqueados en este navegador.' : r === 'disabled' ? 'Faltan las llaves de avisos en el servidor.' : 'Este navegador no permite avisos (en iPhone, agrega la app al inicio).')
+    }
+  } catch {
+    adminPush.value = 'idle'
+    say(false, 'No se pudieron activar los avisos.')
+  }
+}
 
 async function login() {
   try {
@@ -213,6 +232,19 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
       <p v-if="!data.whatsappConfigured" class="mt-3 rounded-[18px] bg-yellow-tint px-4 py-3 text-[13.5px] font-semibold">
         Configura <code>ADMIN_WHATSAPP</code> (tu número con indicativo, ej. 573001234567) para que al reclamar le salga el botón de avisarte por WhatsApp.
       </p>
+
+      <!-- avisos al administrador -->
+      <button
+        :disabled="adminPush !== 'idle'"
+        :class="['mt-4 flex w-full items-center gap-3 rounded-[20px] p-4 text-left ring-1 ring-line', adminPush === 'ok' ? 'bg-mint-tint' : 'bg-surface']"
+        @click="enableAdminPush"
+      >
+        <PhBell :size="22" weight="bold" class="shrink-0" />
+        <span class="min-w-0 flex-1">
+          <span class="block font-display text-[16px] font-bold">{{ adminPush === 'ok' ? 'Avisos activados en este dispositivo' : 'Avisarme cuando reclame un premio' }}</span>
+          <span class="block text-[13px] text-ink-2">Notificación en este celular o computador, además del WhatsApp.</span>
+        </span>
+      </button>
 
       <!-- por entregar -->
       <h2 class="mt-8 text-[22px] font-bold">Por entregar ({{ pending.length }})</h2>

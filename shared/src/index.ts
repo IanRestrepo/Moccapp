@@ -521,6 +521,25 @@ export interface PathCompleteResponse {
   nextKey: string | null
 }
 
+// ── Notificaciones push ─────────────────────────────────────
+export interface PushPayload {
+  title: string
+  body: string
+  /** A dónde lleva al tocarla (ruta de la app, ej. "/#/camino") */
+  url?: string
+  /** Avisos con el mismo tag se reemplazan en vez de amontonarse */
+  tag?: string
+}
+
+export const PushSubscribeSchema = z.object({
+  subscription: z.object({
+    endpoint: z.string().url().max(2000),
+    keys: z.object({ p256dh: z.string().min(10).max(500), auth: z.string().min(4).max(200) }),
+  }),
+  /** Avisos del administrador (premios reclamados) en este dispositivo */
+  admin: z.boolean().optional(),
+})
+
 // ── Presencia (solo el administrador la ve) ─────────────────
 export const PRESENCE_VIEWS = ['home', 'sources', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
 export type PresenceView = (typeof PRESENCE_VIEWS)[number]

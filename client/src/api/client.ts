@@ -167,6 +167,11 @@ export const api = {
     return request<{ exams: ExamHistoryItemDTO[]; nextCursor: string | null }>('GET', `/exams?${params}`)
   },
 
+  // Avisos push
+  pushKey: () => request<{ enabled: boolean; publicKey: string | null }>('GET', '/push/key'),
+  pushSubscribe: (subscription: { endpoint: string; keys: { p256dh: string; auth: string } }, admin = false) =>
+    request<{ ok: true; sent: number }>('POST', '/push/subscribe', { subscription, admin }),
+
   // Modo estudio
   studyDeck: (sourceIds: string[]) => request<StudyDeckDTO>('GET', `/study?sources=${sourceIds.join(',')}`),
 

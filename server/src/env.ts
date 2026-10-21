@@ -60,6 +60,12 @@ const EnvSchema = z.object({
     .transform((v) => v?.replace(/\D/g, '') || undefined),
   /** Nombre de la dueña de la app (la saludan los premios) */
   OWNER_NAME: z.string().default('Ashley'),
+  /** Notificaciones push (Web Push). Se generan con: npx web-push generate-vapid-keys */
+  VAPID_PUBLIC_KEY: z.string().optional(),
+  VAPID_PRIVATE_KEY: z.string().optional(),
+  VAPID_SUBJECT: z.string().default('https://moccapp-xi.vercel.app'),
+  /** Vercel Cron manda "Authorization: Bearer <CRON_SECRET>" (recordatorio diario) */
+  CRON_SECRET: z.string().optional(),
   /** Carpeta con el build del cliente (client/dist) para servir la app desde el mismo servidor */
   STATIC_DIR: z.string().optional(),
   /** Carpeta de migraciones (si no se encuentra sola) */

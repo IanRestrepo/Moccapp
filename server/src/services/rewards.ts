@@ -5,6 +5,7 @@ import { db } from '../db/client.js'
 import { exams, redemptions, rewards, userStats, type Redemption, type Reward } from '../db/schema.js'
 import { env } from '../env.js'
 import { OWNER } from '../lib/profile.js'
+import { sendPush } from './push.js'
 import { AppError, Errors } from '../lib/errors.js'
 
 /** Escalera inicial: el heladito sale en ~5 exámenes; el viaje es la meta grande. Él los ajusta en #/admin. */
@@ -133,6 +134,10 @@ export async function redeem(rewardId: string) {
     .insert(redemptions)
     .values({ rewardId: reward.id, rewardName: reward.name, sticker: reward.sticker, cost: reward.cost })
     .returning()
+  await sendPush(
+    { admin: true },
+    { title: `${env.OWNER_NAME} reclamó un premio 🎁`, body: `${reward.name} · ${reward.cost.toLocaleString('es-CO')} huesitos`, url: '/#/admin', tag: `canje-${created!.id}` },
+  )
   return { redemption: toRedemption(created!), balance: balance - reward.cost, whatsappUrl: whatsappUrl(reward) }
 }
 
@@ -169,6 +174,8 @@ export async function resolveRedemption(id: string, status: 'delivered' | 'cance
     .where(and(eq(redemptions.id, id), eq(redemptions.status, 'pending')))
     .returning()
   if (!r) throw Errors.conflict('NOT_PENDING', 'Ese premio ya fue entregado o cancelado.')
+  if (status === 'delivered')
+    await sendPush({ profile: OWNER }, { title: '¡Tu premio va en camino! 🎁', body: `${r.rewardName}: disfrútalo, te lo ganaste.`, url: '/#/premios', tag: `canje-${r.id}` })
   return toRedemption(r)
 }
 

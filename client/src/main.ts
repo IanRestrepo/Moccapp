@@ -3,6 +3,8 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import './styles/main.css'
+// escucha desde el arranque el aviso de "se puede instalar" (Android)
+import './composables/usePhone'
 
 // Tema: respeta el sistema hasta que ella elija uno
 const saved = (() => {
