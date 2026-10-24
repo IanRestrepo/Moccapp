@@ -10,6 +10,16 @@ interface InstallPromptEvent extends Event {
 
 const ua = navigator.userAgent
 export const isIOS = /iPhone|iPad|iPod/.test(ua) || (ua.includes('Macintosh') && navigator.maxTouchPoints > 1)
+export const isAndroid = /Android/i.test(ua)
+/**
+ * Navegador metido dentro de otra app (Instagram, Facebook, TikTok, WebView de Android…): ahí no se puede
+ * instalar ni recibir avisos. WhatsApp en Android abre "pestañas de Chrome" que tampoco instalan, pero no se
+ * distinguen de Chrome: para eso están los pasos manuales ("Abrir en Chrome").
+ */
+export const inAppBrowser = /Instagram|FBAN|FBAV|FB_IAB|Line\/|TikTok|musical_ly|Snapchat|; wv\)/i.test(ua)
+/** Android: abre esta misma página en Chrome (para poder instalarla) */
+export const chromeIntentUrl = () =>
+  `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;S.browser_fallback_url=${encodeURIComponent(location.href)};end`
 const standaloneNow = () => window.matchMedia('(display-mode: standalone)').matches || (navigator as { standalone?: boolean }).standalone === true
 
 const installed = ref(standaloneNow())
@@ -45,7 +55,9 @@ async function currentSubscription() {
 export function usePhone() {
   // en iPhone, los avisos piden tenerla instalada
   const canPush = computed(() => pushSupported() && (!isIOS || installed.value))
-  const canInstall = computed(() => !installed.value && (!!installEvent.value || isIOS))
+  // en Android sin el aviso de Chrome igual se ofrece: se muestran los pasos a mano
+  const canInstall = computed(() => !installed.value && (!!installEvent.value || isIOS || isAndroid))
+  const hasPrompt = computed(() => !!installEvent.value)
 
   async function refresh() {
     installed.value = standaloneNow()
@@ -79,5 +91,5 @@ export function usePhone() {
     return 'ok'
   }
 
-  return { installed, canInstall, canPush, permission, subscribed, isIOS, install, enablePush, refresh }
+  return { installed, canInstall, hasPrompt, canPush, permission, subscribed, isIOS, isAndroid, inAppBrowser, install, enablePush, refresh }
 }

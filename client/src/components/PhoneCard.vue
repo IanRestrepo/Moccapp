@@ -1,16 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { motion, AnimatePresence } from 'motion-v'
-import { PhBell, PhDeviceMobile, PhExport, PhPlusSquare, PhX } from '@phosphor-icons/vue'
+import { PhBell, PhDeviceMobile, PhDotsThreeVertical, PhExport, PhPlusSquare, PhX } from '@phosphor-icons/vue'
 import BaseButton from '@/components/ui/BaseButton.vue'
-import { usePhone } from '@/composables/usePhone'
+import { chromeIntentUrl, usePhone } from '@/composables/usePhone'
 
 /**
  * Tarjeta en Inicio: 1) agregar Moccapp al inicio del celular, 2) activar los avisos.
  * Desaparece cuando ya está todo, o por una semana si la cierra.
  */
 const phone = usePhone()
-const DISMISS = 'vq-phone-card'
+const DISMISS = 'vq-phone-card-2' // nueva versión: se vuelve a mostrar aunque la hayan cerrado antes
 const WEEK = 7 * 24 * 3600_000
 const dismissed = ref(false)
 const iosSteps = ref(false)
@@ -43,10 +43,19 @@ const step = computed<'install' | 'push' | 'denied' | null>(() => {
 })
 
 async function install() {
-  if (phone.isIOS) return void (iosSteps.value = true)
-  busy.value = true
-  await phone.install().finally(() => (busy.value = false))
+  // Chrome ya ofreció instalarla: diálogo del sistema
+  if (phone.hasPrompt.value) {
+    busy.value = true
+    await phone.install().finally(() => (busy.value = false))
+    return
+  }
+  // dentro de Instagram/Facebook/etc.: primero a Chrome
+  if (phone.isAndroid && phone.inAppBrowser) return void (location.href = chromeIntentUrl())
+  // si no, los pasos a mano (iPhone siempre; Android cuando Chrome no avisó)
+  iosSteps.value = true
 }
+
+const openInChrome = () => (location.href = chromeIntentUrl())
 
 async function enable() {
   busy.value = true
@@ -74,8 +83,12 @@ async function enable() {
     <template v-if="step === 'install'">
       <p class="flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-wide opacity-70"><PhDeviceMobile :size="16" weight="bold" /> En tu celular</p>
       <h2 class="mt-1 font-display text-[20px] font-extrabold leading-tight">Pon a Mocca en tu inicio</h2>
-      <p class="mt-1 text-[14px] font-medium leading-snug opacity-75">Se abre como una app y te puede mandar avisos.</p>
-      <BaseButton class="mt-4" size="md" :loading="busy" @click="install">Agregar a inicio</BaseButton>
+      <p class="mt-1 text-[14px] font-medium leading-snug opacity-75">
+        {{ phone.isAndroid && phone.inAppBrowser ? 'Estás dentro de otra app: ábrela en Chrome para poder instalarla.' : 'Se abre como una app y te puede mandar avisos.' }}
+      </p>
+      <BaseButton class="mt-4" size="md" :loading="busy" @click="install">
+        {{ phone.isAndroid && phone.inAppBrowser ? 'Abrir en Chrome' : phone.hasPrompt.value ? 'Instalar' : 'Agregar a inicio' }}
+      </BaseButton>
     </template>
 
     <template v-else-if="step === 'push'">
@@ -94,7 +107,7 @@ async function enable() {
     </template>
   </section>
 
-  <!-- iPhone: no hay botón de instalar; se explica cómo -->
+  <!-- Pasos a mano: iPhone siempre; Android cuando Chrome no ofrece instalarla -->
   <AnimatePresence>
     <motion.div
       v-if="iosSteps"
@@ -111,8 +124,33 @@ async function enable() {
         :exit="{ y: 300 }"
         :transition="{ type: 'spring', stiffness: 320, damping: 30 }"
       >
-        <h2 class="font-display text-[22px] font-extrabold">Agregar a inicio en iPhone</h2>
-        <ol class="mt-4 flex flex-col gap-3 text-[15px] font-medium">
+        <h2 class="font-display text-[22px] font-extrabold">{{ phone.isIOS ? 'Agregar a inicio en iPhone' : 'Instalar en Android' }}</h2>
+        <!-- Android -->
+        <ol v-if="!phone.isIOS" class="mt-4 flex flex-col gap-3 text-[15px] font-medium">
+          <li class="flex items-start gap-3">
+            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-surface font-bold ring-1 ring-line">1</span>
+            <span>
+              Si la abriste desde <b>WhatsApp</b> o Instagram, primero ábrela en Chrome:
+              <button class="mt-1 block font-bold text-sky underline" @click="openInChrome">Abrir en Chrome</button>
+            </span>
+          </li>
+          <li class="flex items-center gap-3">
+            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-surface font-bold ring-1 ring-line">2</span>
+            <span>En Chrome toca <PhDotsThreeVertical class="inline align-[-4px]" :size="22" weight="bold" /> (arriba a la derecha).</span>
+          </li>
+          <li class="flex items-center gap-3">
+            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-surface font-bold ring-1 ring-line">3</span>
+            <span>Toca <b>Instalar app</b> (o <b>Agregar a la pantalla principal</b>) → <b>Instalar</b>.</span>
+          </li>
+          <li class="flex items-center gap-3">
+            <span class="grid size-9 shrink-0 place-items-center rounded-full bg-surface font-bold ring-1 ring-line">4</span>
+            Abre Moccapp desde el ícono de Mocca y activa los avisos.
+          </li>
+          <li class="rounded-[16px] bg-surface p-3 text-[13.5px] text-ink-2 ring-1 ring-line">
+            ¿Usas el navegador de <b>Samsung</b>? Menú ☰ → <b>Agregar página a</b> → <b>Pantalla de inicio</b>.
+          </li>
+        </ol>
+        <ol v-else class="mt-4 flex flex-col gap-3 text-[15px] font-medium">
           <li class="flex items-center gap-3">
             <span class="grid size-9 shrink-0 place-items-center rounded-full bg-surface ring-1 ring-line font-bold">1</span>
             Abre esta página en <b>Safari</b>.
