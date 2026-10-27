@@ -3,7 +3,7 @@ import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { motion, AnimatePresence } from 'motion-v'
 import { PhHeart } from '@phosphor-icons/vue'
-import MascotBlob from '@/components/mascot/MascotBlob.vue'
+import MascotBlob, { type MascotMood } from '@/components/mascot/MascotBlob.vue'
 import { useSound } from '@/composables/useSound'
 
 /**
@@ -14,7 +14,44 @@ const route = useRoute()
 const { play } = useSound()
 const visible = ref(false)
 const TICK_MS = 10_000
-const SHOW_MS = 4_500
+
+/** Lo que le dice Mocca (de parte de Ian y suya). Sale uno distinto cada vez. */
+const MESSAGES = [
+  'Ian & yo te amamos Ash',
+  'Ian está muy orgulloso de ti',
+  'Eres la futura mejor veterinaria del mundo 🐾',
+  'Respira. Tú puedes con esto 💪',
+  'Cada pregunta te acerca un poquito más a tu sueño',
+  'No importa la nota: ya estamos orgullosos de ti',
+  'Ian te manda un abrazo gigante 🤗',
+  'Los animalitos van a tener mucha suerte contigo',
+  'Eres más inteligente de lo que crees, Ash',
+  'Cuando seas la doctora Ash, yo seré tu primera paciente 🐶',
+  'Un descansito, un vaso de agua y seguimos 💧',
+  'Ian dice que eres su persona favorita',
+  'Te amamos hasta la luna y de vuelta 🌙',
+  'Paso a paso, Ash. Así se llega lejos',
+  '¡Guau! Hoy estás estudiando increíble',
+  '¿Ya comiste algo rico? Cuídate, que te queremos',
+  'Estudiar contigo es mi parte favorita del día',
+  'Admiramos lo mucho que te esfuerzas',
+  'Mocca y Ian creen en ti, siempre',
+  'Tú puedes, Ash. Siempre has podido 💜',
+]
+const MOODS: MascotMood[] = ['celebrating', 'happy', 'proud', 'amazed']
+const message = ref(MESSAGES[0]!)
+const mood = ref<MascotMood>('celebrating')
+let last = -1
+// la primera vez, el de siempre; después, al azar sin repetir el anterior
+function nextMessage() {
+  let i = last === -1 ? 0 : Math.floor(Math.random() * MESSAGES.length)
+  if (i === last) i = (i + 1) % MESSAGES.length
+  last = i
+  message.value = MESSAGES[i]!
+  mood.value = MOODS[Math.floor(Math.random() * MOODS.length)]!
+}
+// más tiempo si el mensaje es largo, para alcanzar a leerlo
+const showMs = () => Math.max(4_500, message.value.length * 110)
 const between = (minMin: number, maxMin: number) => (minMin + Math.random() * (maxMin - minMin)) * 60_000
 
 let elapsed = 0
@@ -24,9 +61,10 @@ let ticker = 0
 let hideTimer = 0
 
 function show() {
+  nextMessage()
   visible.value = true
   play('pop')
-  hideTimer = window.setTimeout(hide, SHOW_MS)
+  hideTimer = window.setTimeout(hide, showMs())
 }
 function hide() {
   clearTimeout(hideTimer)
@@ -67,7 +105,7 @@ const HEARTS = [
       v-if="visible"
       type="button"
       class="fixed bottom-24 right-3 z-[60] flex flex-col items-end"
-      aria-label="Mensaje de Mocca: Ian y yo te amamos, Ash. Toca para cerrar."
+:aria-label="`Mensaje de Mocca: ${message}. Toca para cerrar.`"
       :initial="{ y: 220, rotate: 12 }"
       :animate="{ y: 0, rotate: 0 }"
       :exit="{ y: 240, rotate: -10 }"
@@ -75,12 +113,12 @@ const HEARTS = [
       @click="hide"
     >
       <motion.span
-        class="relative mb-1 mr-6 rounded-[20px] rounded-br-none bg-pink px-4 py-3 font-display text-[17px] font-extrabold text-on-color shadow-float"
+        class="relative mb-1 mr-6 max-w-[250px] rounded-[20px] rounded-br-none bg-pink px-4 py-3 text-left font-display text-[17px] font-extrabold leading-snug text-on-color shadow-float"
         :initial="{ scale: 0, opacity: 0 }"
         :animate="{ scale: 1, opacity: 1 }"
         :transition="{ delay: 0.35, type: 'spring', stiffness: 400, damping: 20 }"
       >
-        Ian &amp; yo te amamos Ash
+        {{ message }}
         <PhHeart class="ml-1 inline align-[-3px]" :size="18" weight="fill" />
       </motion.span>
       <span class="relative">
@@ -94,7 +132,7 @@ const HEARTS = [
         >
           <PhHeart :size="h.size" weight="fill" />
         </motion.span>
-        <MascotBlob mood="celebrating" :size="120" />
+        <MascotBlob :mood="mood" :size="120" />
       </span>
     </motion.button>
   </AnimatePresence>
