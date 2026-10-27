@@ -4,15 +4,16 @@ import { and, desc, eq, gt, inArray, isNull } from 'drizzle-orm'
 import type { MoccaMessageDTO, MoccaMessageMood, SentMoccaMessageDTO } from '@vetquiz/shared'
 import { db } from '../db/client.js'
 import { moccaMessages } from '../db/schema.js'
-import { Errors } from '../lib/errors.js'
-import { currentProfile, profileNames } from '../lib/profile.js'
+import { OWNER, currentProfile } from '../lib/profile.js'
+import { AppError } from '../lib/errors.js'
 import { sendPush } from './push.js'
 
 /** Más viejos que esto ya no se muestran (llegaría fuera de contexto) */
 const MAX_AGE_MS = 3 * 24 * 3600_000
 
 export async function sendMoccaMessage(p: { profile: string; text: string; mood: MoccaMessageMood; push: boolean }): Promise<SentMoccaMessageDTO> {
-  if (!profileNames().includes(p.profile)) throw Errors.notFound('Esa persona')
+  // los mensajitos de Ian son solo para Ash
+  if (p.profile !== OWNER) throw new AppError(403, 'OWNER_ONLY', 'Los mensajitos de Mocca son solo para Ashley.')
   const [m] = await db.insert(moccaMessages).values(p).returning()
   if (p.push) await sendPush({ profile: p.profile }, { title: 'Mocca te trae un mensajito 💌', body: p.text, url: '/#/', tag: `mensaje-${m!.id}` })
   return toSent(m!)

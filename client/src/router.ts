@@ -24,6 +24,10 @@ export const router = createRouter({
 })
 
 // los premios son solo de Ash
-router.beforeEach((to) => {
-  if (to.path === '/premios' && !useUiStore().owner) return '/'
+router.beforeEach(async (to) => {
+  if (to.path !== '/premios') return
+  const ui = useUiStore()
+  // siempre se espera a que el servidor diga quién es (máximo 4 s): el valor guardado podría ser de otra persona
+  if (!ui.known) await Promise.race([ui.ownerKnown, new Promise((r) => setTimeout(r, 4000))])
+  if (!ui.known || !ui.owner) return '/'
 })

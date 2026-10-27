@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import type { PresenceView } from '@vetquiz/shared'
 import { MotionConfig } from 'motion-v'
 import BottomNav from '@/components/BottomNav.vue'
@@ -29,6 +29,7 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', refreshOn
 
 // Señal de vida para el panel del administrador: cada 30 s mientras la app está visible
 const route = useRoute()
+const router = useRouter()
 // cada 15 s: también trae los mensajitos de Ian para que Mocca los diga casi al instante
 const PING_MS = 15_000
 function viewOf(path: string): PresenceView {
@@ -70,10 +71,10 @@ onMounted(async () => {
   window.addEventListener(LOCKED_EVENT, lock)
   const status = await api.accessStatus().catch(() => null)
   if (status?.required && !status.granted) locked.value = true
-  if (status) {
-    ui.owner = status.owner !== false
-    ui.profileName = status.name ?? null
-  }
+  // solo es Ash si el servidor lo dice explícitamente
+  if (status?.granted) ui.setProfile(status.owner === true, status.name ?? null)
+  // si estaba en Premios y resultó no ser Ash, fuera
+  if (!ui.owner && route.path === '/premios') router.replace('/')
   ping()
 })
 onBeforeUnmount(() => window.removeEventListener(LOCKED_EVENT, lock))

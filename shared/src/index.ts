@@ -564,7 +564,8 @@ export const MOCCA_MESSAGE_MOODS = ['happy', 'celebrating', 'proud', 'amazed'] a
 export type MoccaMessageMood = (typeof MOCCA_MESSAGE_MOODS)[number]
 
 export const SendMoccaMessageSchema = z.object({
-  profile: z.string().min(2).max(20),
+  /** Siempre Ash (la dueña): el servidor rechaza cualquier otra */
+  profile: z.string().min(2).max(20).default('ash'),
   text: z.string().trim().min(1, 'Escribe el mensajito.').max(160),
   mood: z.enum(MOCCA_MESSAGE_MOODS).default('happy'),
   /** Además, como notificación al celular (si los avisos están activados) */

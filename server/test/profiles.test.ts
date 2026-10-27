@@ -80,3 +80,18 @@ test('lo que sube Magola no le aparece a Ash', async () => {
   assert.equal((await (await get('/sources', cookie)).json()).sources.length, 2)
   assert.equal((await (await get('/sources', legacy)).json()).sources.length, 1)
 })
+
+test('los mensajitos de Mocca son solo para Ash: a Magola no se pueden mandar', async () => {
+  const send = (profile: string) =>
+    fetch(`${base}/admin/messages`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', cookie: legacy },
+      body: JSON.stringify({ profile, text: 'hola' }),
+    })
+  assert.equal((await send('magola')).status, 403)
+  assert.equal((await send('ash')).status, 201)
+  // y la app de Magola nunca recibe mensajitos
+  const { cookie } = await enter('codigo-magola-789', '10.0.0.9')
+  const ping = await (await fetch(`${base}/presence`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: '{"view":"home"}' })).json()
+  assert.deepEqual(ping.messages, [])
+})

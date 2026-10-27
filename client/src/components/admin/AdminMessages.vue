@@ -17,7 +17,8 @@ import { pressable } from '@/lib/motion'
 const props = defineProps<{ people: AdminPersonDTO[]; viewLabel: (p: AdminPersonDTO) => string }>()
 const emit = defineEmits<{ toast: [ok: boolean, text: string] }>()
 
-const to = ref('ash')
+// solo para Ash (la primera persona del panel)
+const to = computed(() => props.people[0]?.profile ?? 'ash')
 const text = ref('')
 const mood = ref<MoccaMessageMood>('happy')
 const push = ref(false)
@@ -77,24 +78,12 @@ const when = (iso: string) => {
   <section>
     <!-- redactor -->
     <div class="rounded-card bg-surface p-4 ring-1 ring-line">
-      <div v-if="people.length > 1" class="flex items-center gap-2">
-        <span class="text-[13px] font-bold text-ink-2">Para</span>
-        <button
-          v-for="p in people"
-          :key="p.profile"
-          :class="['flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-[14px] font-bold', to === p.profile ? 'bg-night text-white' : 'bg-surface-2']"
-          @click="to = p.profile"
-        >
-          <span :class="['size-2 rounded-full', p.online ? 'bg-mint' : 'bg-ink-3/40']" />
-          {{ p.name.split(' ')[0] }}
-        </button>
-      </div>
 
       <!-- vista previa: Mocca con su globo -->
       <div class="mb-4 mt-4 flex items-end gap-2">
         <MascotBlob :mood="mood" :size="78" class="shrink-0" />
         <div class="relative mb-6 min-h-[64px] flex-1 rounded-[20px] rounded-bl-none bg-lilac px-4 py-3 text-on-color">
-          <span class="block text-[11.5px] font-extrabold uppercase tracking-wide opacity-70">💌 De Ian</span>
+          <span class="block text-[11.5px] font-extrabold uppercase tracking-wide opacity-70">💌 De Ian · para {{ nameOf(to) }}</span>
           <textarea
             v-model="text"
             rows="2"
@@ -157,7 +146,7 @@ const when = (iso: string) => {
         <MascotBlob :mood="m.mood" :size="40" class="shrink-0" />
         <span class="min-w-0 flex-1">
           <span class="block text-[14.5px] font-bold leading-snug">{{ m.text }}</span>
-          <span class="mt-0.5 block text-[12px] font-medium text-ink-2">Para {{ nameOf(m.profile) }} · {{ when(m.createdAt) }}</span>
+          <span class="mt-0.5 block text-[12px] font-medium text-ink-2">{{ when(m.createdAt) }}</span>
         </span>
         <span
           :class="[
