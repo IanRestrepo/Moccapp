@@ -9,6 +9,8 @@ import type {
   ExamInProgressDTO,
   AdminRewardsDTO,
   AdminPresenceDTO,
+  CollectionDTO,
+  CollectionInput,
   StudyDeckDTO,
   PathDTO,
   PathLessonDTO,
@@ -166,6 +168,17 @@ export const api = {
     const params = new URLSearchParams(Object.entries(q).filter(([, v]) => v !== undefined).map(([k, v]) => [k, String(v)]))
     return request<{ exams: ExamHistoryItemDTO[]; nextCursor: string | null }>('GET', `/exams?${params}`)
   },
+
+  // Carpetas
+  collections: () => request<{ collections: CollectionDTO[] }>('GET', '/collections').then((r) => r.collections),
+  createCollection: (input: CollectionInput) => request<{ collection: CollectionDTO }>('POST', '/collections', input).then((r) => r.collection),
+  updateCollection: (id: string, patch: { name?: string; color?: SourceColor }) =>
+    request<{ collection: CollectionDTO }>('PATCH', `/collections/${id}`, patch).then((r) => r.collection),
+  deleteCollection: (id: string) => request<void>('DELETE', `/collections/${id}`),
+  addToCollection: (id: string, sourceIds: string[]) =>
+    request<{ collection: CollectionDTO }>('POST', `/collections/${id}/sources`, { sourceIds }).then((r) => r.collection),
+  removeFromCollection: (id: string, sourceId: string) =>
+    request<{ collection: CollectionDTO }>('DELETE', `/collections/${id}/sources/${sourceId}`).then((r) => r.collection),
 
   // Avisos push
   pushKey: () => request<{ enabled: boolean; publicKey: string | null }>('GET', '/push/key'),

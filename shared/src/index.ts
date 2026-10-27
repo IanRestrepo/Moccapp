@@ -521,6 +521,24 @@ export interface PathCompleteResponse {
   nextKey: string | null
 }
 
+// ── Carpetas (agrupan fuentes) ──────────────────────────────
+export interface CollectionDTO {
+  id: string
+  name: string
+  color: SourceColor
+  /** En orden: la más recién agregada primero */
+  sourceIds: string[]
+  createdAt: string
+}
+
+export const CollectionInputSchema = z.object({
+  name: z.string().trim().min(1, 'Ponle un nombre a la carpeta.').max(60),
+  color: z.enum(SOURCE_COLORS).optional(),
+  /** Fuentes para meter de una vez al crearla */
+  sourceIds: z.array(z.string().uuid()).max(100).optional(),
+})
+export type CollectionInput = z.infer<typeof CollectionInputSchema>
+
 // ── Notificaciones push ─────────────────────────────────────
 export interface PushPayload {
   title: string

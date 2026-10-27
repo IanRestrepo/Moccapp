@@ -306,6 +306,35 @@ export const pathProgress = pgTable(
   (t) => [primaryKey({ columns: [t.profile, t.nodeKey] })],
 )
 
+// ── collections ──────────────────────────────────────────────
+// Carpetas grandes que arma cada persona (ej. "BIOQUÍMICA SEMESTRE 2") para agrupar sus fuentes.
+// Son de cada perfil: Magola puede meter fuentes de Ash en SUS carpetas sin cambiar las de Ash.
+export const collections = pgTable(
+  'collections',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    profile: text('profile').notNull(),
+    name: text('name').notNull(),
+    color: sourceColor('color').notNull(),
+    ...timestamps,
+  },
+  (t) => [index('collections_profile_idx').on(t.profile)],
+)
+
+export const collectionSources = pgTable(
+  'collection_sources',
+  {
+    collectionId: uuid('collection_id')
+      .notNull()
+      .references(() => collections.id, { onDelete: 'cascade' }),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => sources.id, { onDelete: 'cascade' }),
+    addedAt: timestamp('added_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ name: 'collection_sources_pk', columns: [t.collectionId, t.sourceId] })],
+)
+
 // ── push_subscriptions ───────────────────────────────────────
 // Un registro por celular/navegador que activó los avisos. admin = el del administrador (avisos de premios).
 export const pushSubscriptions = pgTable('push_subscriptions', {

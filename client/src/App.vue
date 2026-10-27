@@ -34,6 +34,7 @@ function viewOf(path: string): PresenceView {
   if (path === '/') return 'home'
   const map: [string, PresenceView][] = [
     ['/fuentes', 'sources'],
+    ['/carpeta/', 'sources'],
     ['/configurar', 'configure'],
     ['/estudiar', 'study'],
     ['/camino', 'path'],

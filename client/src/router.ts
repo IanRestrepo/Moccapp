@@ -10,6 +10,7 @@ export const router = createRouter({
     { path: '/historial', component: () => import('@/views/HistoryView.vue'), meta: { nav: true } },
     { path: '/premios', component: () => import('@/views/RewardsView.vue'), meta: { nav: true } },
     { path: '/admin', component: () => import('@/views/AdminView.vue') },
+    { path: '/carpeta/:id', component: () => import('@/views/CollectionView.vue') },
     { path: '/camino', component: () => import('@/views/PathView.vue') },
     { path: '/leccion/:key', component: () => import('@/views/LessonView.vue') },
     { path: '/estudiar', component: () => import('@/views/StudyView.vue') },
