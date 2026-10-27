@@ -101,7 +101,8 @@ export async function getRewards(opts: { includeInactive?: boolean } = {}): Prom
     .select()
     .from(rewards)
     .where(opts.includeInactive ? undefined : eq(rewards.active, true))
-    .orderBy(asc(rewards.sort), asc(rewards.cost))
+    // de lo más barato (los besos gratis) al gran premio
+    .orderBy(asc(rewards.cost), asc(rewards.sort))
   const history = await db.select().from(redemptions).orderBy(desc(redemptions.createdAt)).limit(100)
   const [stats] = await db.select({ name: userStats.displayName }).from(userStats).where(eq(userStats.id, 1))
   return {
@@ -118,7 +119,10 @@ export async function getRewards(opts: { includeInactive?: boolean } = {}): Prom
 /** Mensaje de WhatsApp que ella le manda al administrador al reclamar */
 export function whatsappUrl(reward: { name: string; cost: number }): string | null {
   if (!env.ADMIN_WHATSAPP) return null
-  const text = `¡Hola! 🐾 Reclamé «${reward.name}» en Moccapp con ${reward.cost.toLocaleString('es-CO')} huesitos. ¡Me lo gané estudiando! 🦴`
+  const text =
+    reward.cost === 0
+      ? `¡Hola! 🐾 Reclamé «${reward.name}» en Moccapp. ¡Es gratis y lo quiero ya! 💋`
+      : `¡Hola! 🐾 Reclamé «${reward.name}» en Moccapp con ${reward.cost.toLocaleString('es-CO')} huesitos. ¡Me lo gané estudiando! 🦴`
   return `https://wa.me/${env.ADMIN_WHATSAPP}?text=${encodeURIComponent(text)}`
 }
 
@@ -136,7 +140,7 @@ export async function redeem(rewardId: string) {
     .returning()
   await sendPush(
     { admin: true },
-    { title: `${env.OWNER_NAME} reclamó un premio 🎁`, body: `${reward.name} · ${reward.cost.toLocaleString('es-CO')} huesitos`, url: '/#/admin', tag: `canje-${created!.id}` },
+    { title: `${env.OWNER_NAME} reclamó un premio 🎁`, body: reward.cost === 0 ? `${reward.name} · gratis 💋` : `${reward.name} · ${reward.cost.toLocaleString('es-CO')} huesitos`, url: '/#/admin', tag: `canje-${created!.id}` },
   )
   return { redemption: toRedemption(created!), balance: balance - reward.cost, whatsappUrl: whatsappUrl(reward) }
 }

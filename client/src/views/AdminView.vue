@@ -9,7 +9,7 @@ import StickerIcon from '@/components/StickerIcon.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { relativeDay } from '@/lib/format'
 import { usePhone } from '@/composables/usePhone'
-import { REWARD_STICKER_LABEL, REWARD_TINT, bonesText } from '@/lib/rewards'
+import { REWARD_STICKER_LABEL, REWARD_TINT, bonesText, costText, groupRedemptions } from '@/lib/rewards'
 
 /** Página del administrador: entregar premios, editarlos y regalar huesitos. Protegida con ADMIN_CODE. */
 const router = useRouter()
@@ -103,7 +103,20 @@ async function login() {
 }
 
 const pending = computed(() => data.value?.redemptions.filter((r) => r.status === 'pending') ?? [])
-const resolved = computed(() => data.value?.redemptions.filter((r) => r.status !== 'pending').slice(0, 20) ?? [])
+const resolved = computed(() => data.value?.redemptions.filter((r) => r.status !== 'pending') ?? [])
+// iguales agrupados: "Beso loco ×3" con botón para entregar uno o todos
+const pendingGroups = computed(() => groupRedemptions(pending.value))
+const resolvedGroups = computed(() => groupRedemptions(resolved.value).slice(0, 12))
+
+async function resolveMany(ids: string[], status: 'delivered' | 'cancelled') {
+  try {
+    for (const id of ids) await api.resolveRedemption(id, status)
+    say(true, status === 'delivered' ? `¡${ids.length} entregados!` : 'Cancelados: se le devolvieron los huesitos.')
+    await load()
+  } catch (err) {
+    fail(err)
+  }
+}
 
 async function resolve(id: string, status: 'delivered' | 'cancelled') {
   try {
@@ -250,17 +263,32 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
       <h2 class="mt-8 text-[22px] font-bold">Por entregar ({{ pending.length }})</h2>
       <p v-if="!pending.length" class="mt-2 text-[14px] text-ink-2">Nada pendiente por ahora.</p>
       <ul class="mt-3 flex flex-col gap-2">
-        <li v-for="p in pending" :key="p.id" class="flex items-center gap-3 rounded-[20px] bg-surface p-3 ring-1 ring-line">
-          <span :class="['grid size-11 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[p.sticker]]"><StickerIcon :name="p.sticker" :size="30" /></span>
-          <span class="min-w-0 flex-1">
-            <span class="block truncate font-display text-[16px] font-bold">{{ p.rewardName }}</span>
-            <span class="text-[12.5px] text-ink-2">{{ relativeDay(p.createdAt) }} · {{ bonesText(p.cost) }} huesitos</span>
-          </span>
-          <button class="grid size-10 place-items-center rounded-full bg-mint text-on-color" aria-label="Marcar entregado" @click="resolve(p.id, 'delivered')">
-            <PhCheck :size="18" weight="bold" />
-          </button>
-          <button class="grid size-10 place-items-center rounded-full bg-surface-2" aria-label="Cancelar y devolver huesitos" @click="resolve(p.id, 'cancelled')">
-            <PhX :size="18" weight="bold" />
+        <li v-for="g in pendingGroups" :key="g.key" class="rounded-[20px] bg-surface p-3 ring-1 ring-line">
+          <div class="flex items-center gap-3">
+            <span :class="['relative grid size-11 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[g.first.sticker]]">
+              <StickerIcon :name="g.first.sticker" :size="30" />
+              <span v-if="g.count > 1" class="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full bg-night px-1.5 text-[12px] font-extrabold text-white">
+                ×{{ g.count }}
+              </span>
+            </span>
+            <span class="min-w-0 flex-1">
+              <span class="block truncate font-display text-[16px] font-bold">{{ g.first.rewardName }}</span>
+              <span class="text-[12.5px] text-ink-2">{{ g.count > 1 ? 'El último: ' : '' }}{{ relativeDay(g.first.createdAt) }} · {{ costText(g.first.cost) }}</span>
+            </span>
+            <!-- entrega/cancela el más antiguo de ese premio -->
+            <button class="grid size-10 place-items-center rounded-full bg-mint text-on-color" aria-label="Marcar uno entregado" @click="resolve(g.items.at(-1)!.id, 'delivered')">
+              <PhCheck :size="18" weight="bold" />
+            </button>
+            <button class="grid size-10 place-items-center rounded-full bg-surface-2" aria-label="Cancelar uno y devolver huesitos" @click="resolve(g.items.at(-1)!.id, 'cancelled')">
+              <PhX :size="18" weight="bold" />
+            </button>
+          </div>
+          <button
+            v-if="g.count > 1"
+            class="mt-2 w-full rounded-[14px] bg-mint-tint py-2 text-[13.5px] font-bold"
+            @click="resolveMany(g.items.map((i) => i.id), 'delivered')"
+          >
+            Entregar los {{ g.count }}
           </button>
         </li>
       </ul>
@@ -283,7 +311,7 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
                 <StickerIcon :name="drafts.get(r.id)!.sticker" :size="34" />
               </span>
               <input v-model="drafts.get(r.id)!.name" :class="[input, 'flex-1']" aria-label="Nombre" />
-              <input v-model.number="drafts.get(r.id)!.cost" type="number" min="1" :class="[input, 'w-24 shrink-0']" aria-label="Costo en huesitos" />
+              <input v-model.number="drafts.get(r.id)!.cost" type="number" min="0" :class="[input, 'w-24 shrink-0']" aria-label="Costo en huesitos" />
             </div>
             <input v-model="drafts.get(r.id)!.description" :class="[input, 'mt-2 w-full']" placeholder="Descripción" aria-label="Descripción" />
             <div class="mt-2 flex items-center gap-2">
@@ -314,7 +342,7 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
         <div class="flex items-center gap-2">
           <span :class="['grid size-12 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[fresh.sticker]]"><StickerIcon :name="fresh.sticker" :size="34" /></span>
           <input v-model="fresh.name" :class="[input, 'flex-1']" placeholder="Ej: Peluche de perrito" aria-label="Nombre del premio nuevo" />
-          <input v-model.number="fresh.cost" type="number" min="1" :class="[input, 'w-24 shrink-0']" aria-label="Costo" />
+          <input v-model.number="fresh.cost" type="number" min="0" :class="[input, 'w-24 shrink-0']" aria-label="Costo" />
         </div>
         <input v-model="fresh.description" :class="[input, 'mt-2 w-full']" placeholder="Descripción (opcional)" aria-label="Descripción del premio nuevo" />
         <div class="mt-2 flex items-center gap-2">
@@ -322,7 +350,7 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
             <option v-for="s in REWARD_STICKERS" :key="s" :value="s">{{ REWARD_STICKER_LABEL[s] }}</option>
           </select>
           <span class="flex-1" />
-          <BaseButton type="submit" size="md" :disabled="!fresh.name.trim() || !fresh.cost"><PhPlus :size="16" weight="bold" /> Crear</BaseButton>
+          <BaseButton type="submit" size="md" :disabled="!fresh.name.trim() || typeof fresh.cost !== 'number' || fresh.cost < 0"><PhPlus :size="16" weight="bold" /> Crear</BaseButton>
         </div>
       </form>
 
@@ -330,10 +358,10 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
       <template v-if="resolved.length">
         <h2 class="mt-8 text-[22px] font-bold">Historial</h2>
         <ul class="mt-3 flex flex-col gap-1.5">
-          <li v-for="h in resolved" :key="h.id" class="flex items-center justify-between rounded-[16px] bg-surface px-4 py-2.5 text-[14px] ring-1 ring-line">
-            <span class="truncate font-semibold">{{ h.rewardName }}</span>
-            <span :class="['shrink-0 text-[12.5px] font-bold', h.status === 'delivered' ? 'text-success' : 'text-ink-3']">
-              {{ h.status === 'delivered' ? 'Entregado' : 'Cancelado' }} · {{ relativeDay(h.resolvedAt ?? h.createdAt) }}
+          <li v-for="g in resolvedGroups" :key="g.key" class="flex items-center justify-between gap-3 rounded-[16px] bg-surface px-4 py-2.5 text-[14px] ring-1 ring-line">
+            <span class="truncate font-semibold">{{ g.first.rewardName }}<b v-if="g.count > 1" class="ml-1.5">×{{ g.count }}</b></span>
+            <span :class="['shrink-0 text-[12.5px] font-bold', g.first.status === 'delivered' ? 'text-success' : 'text-ink-3']">
+              {{ g.first.status === 'delivered' ? 'Entregado' : 'Cancelado' }} · {{ relativeDay(g.first.resolvedAt ?? g.first.createdAt) }}
             </span>
           </li>
         </ul>

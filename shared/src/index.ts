@@ -405,7 +405,8 @@ export const RewardInputSchema = z.object({
   name: z.string().trim().min(1, 'Ponle nombre al premio.').max(60),
   description: z.string().trim().max(140).default(''),
   sticker: z.enum(REWARD_STICKERS),
-  cost: z.number().int().min(1).max(1_000_000),
+  /** 0 = gratis (ej. besos) */
+  cost: z.number().int().min(0).max(1_000_000),
   sort: z.number().int().min(0).max(999).optional(),
   active: z.boolean().optional(),
 })

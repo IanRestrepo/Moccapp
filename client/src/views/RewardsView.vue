@@ -11,7 +11,7 @@ import StickerIcon from '@/components/StickerIcon.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { relativeDay } from '@/lib/format'
 import { pressable, spring } from '@/lib/motion'
-import { REWARD_TINT, bonesText } from '@/lib/rewards'
+import { REWARD_TINT, bonesText, costText, groupRedemptions } from '@/lib/rewards'
 import { useSound } from '@/composables/useSound'
 
 /** Premios de Ashley: se canjean con huesitos que gana estudiando. */
@@ -32,6 +32,11 @@ const balance = computed(() => data.value?.balance ?? 0)
 /** Próxima meta: el premio más barato que todavía no le alcanza */
 const nextGoal = computed(() => data.value?.rewards.find((r) => r.cost > balance.value))
 const pending = computed(() => data.value?.redemptions.filter((r) => r.status === 'pending') ?? [])
+// iguales agrupados ("Beso loco ×7"); se ven los primeros y el resto con "Ver todo"
+const groups = computed(() => groupRedemptions(data.value?.redemptions ?? []))
+const showAll = ref(false)
+const VISIBLE = 5
+const shownGroups = computed(() => (showAll.value ? groups.value : groups.value.slice(0, VISIBLE)))
 
 const howToEarn = [
   { n: `+${BONE_RULES.finish}`, text: 'por terminar un examen' },
@@ -147,7 +152,8 @@ const STATUS = {
           </div>
           <div class="mt-3 flex items-center justify-between gap-3">
             <span class="flex items-center gap-1.5 font-display text-[18px] font-extrabold tabular-nums">
-              <StickerIcon name="bone" :size="22" :tilt="-18" /> {{ bonesText(r.cost) }}
+              <template v-if="r.cost === 0">Gratis 💋</template>
+              <template v-else><StickerIcon name="bone" :size="22" :tilt="-18" /> {{ bonesText(r.cost) }}</template>
             </span>
             <motion.button
               v-if="balance >= r.cost"
@@ -170,19 +176,31 @@ const STATUS = {
           {{ pending.length === 1 ? 'Tienes 1 premio por recibir' : `Tienes ${pending.length} premios por recibir` }}
         </p>
         <ul class="mt-4 flex flex-col gap-2">
-          <li v-for="h in data.redemptions" :key="h.id" class="flex items-center gap-3 rounded-[20px] bg-surface p-3 ring-1 ring-line">
-            <span :class="['grid size-11 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[h.sticker]]">
-              <StickerIcon :name="h.sticker" :size="30" />
+          <li v-for="g in shownGroups" :key="g.key" class="flex items-center gap-3 rounded-[20px] bg-surface p-3 ring-1 ring-line">
+            <span :class="['relative grid size-11 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[g.first.sticker]]">
+              <StickerIcon :name="g.first.sticker" :size="30" />
+              <span v-if="g.count > 1" class="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full bg-night px-1.5 text-[12px] font-extrabold text-white">
+                ×{{ g.count }}
+              </span>
             </span>
             <span class="min-w-0 flex-1">
-              <span class="block truncate font-display text-[16px] font-bold">{{ h.rewardName }}</span>
-              <span class="text-[12.5px] font-medium text-ink-2">{{ relativeDay(h.createdAt) }} · {{ bonesText(h.cost) }} huesitos</span>
+              <span class="block truncate font-display text-[16px] font-bold">{{ g.first.rewardName }}</span>
+              <span class="text-[12.5px] font-medium text-ink-2">
+                {{ g.count > 1 ? 'La última: ' : '' }}{{ relativeDay(g.first.createdAt) }} · {{ costText(g.first.cost) }}
+              </span>
             </span>
-            <span :class="['flex items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold', STATUS[h.status].cls]">
-              <component :is="STATUS[h.status].icon" :size="14" weight="bold" /> {{ STATUS[h.status].label }}
+            <span :class="['flex shrink-0 items-center gap-1 rounded-full px-2.5 py-1 text-[12px] font-bold', STATUS[g.first.status].cls]">
+              <component :is="STATUS[g.first.status].icon" :size="14" weight="bold" /> {{ STATUS[g.first.status].label }}
             </span>
           </li>
         </ul>
+        <button
+          v-if="groups.length > VISIBLE"
+          class="mx-auto mt-3 block rounded-full bg-surface px-4 py-2 text-[13.5px] font-bold ring-1 ring-line"
+          @click="showAll = !showAll"
+        >
+          {{ showAll ? 'Ver menos' : `Ver todo (${groups.length})` }}
+        </button>
       </template>
     </template>
 
@@ -191,7 +209,7 @@ const STATUS = {
     <ConfirmDialog
       :open="!!confirming"
       :title="`¿Reclamar ${confirming?.name ?? ''}?`"
-      :body="confirming ? `Se descuentan ${bonesText(confirming.cost)} huesitos. Te quedan ${bonesText(balance - confirming.cost)}.` : ''"
+      :body="confirming ? (confirming.cost === 0 ? '¡Es gratis! Ian te lo debe 💋' : `Se descuentan ${bonesText(confirming.cost)} huesitos. Te quedan ${bonesText(balance - confirming.cost)}.`) : ''"
       confirm="¡Sí, lo quiero!"
       cancel="Todavía no"
       mood="happy"
