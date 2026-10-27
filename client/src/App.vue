@@ -29,7 +29,8 @@ onBeforeUnmount(() => document.removeEventListener('visibilitychange', refreshOn
 
 // Señal de vida para el panel del administrador: cada 30 s mientras la app está visible
 const route = useRoute()
-const PING_MS = 30_000
+// cada 15 s: también trae los mensajitos de Ian para que Mocca los diga casi al instante
+const PING_MS = 15_000
 function viewOf(path: string): PresenceView {
   if (path === '/') return 'home'
   const map: [string, PresenceView][] = [
@@ -49,7 +50,10 @@ function viewOf(path: string): PresenceView {
 }
 function ping() {
   if (document.visibilityState !== 'visible' || locked.value || route.path.startsWith('/admin')) return
-  api.ping(viewOf(route.path)).catch(() => {})
+  api
+    .ping(viewOf(route.path))
+    .then((r) => r?.messages?.forEach((m) => window.dispatchEvent(new CustomEvent('vq:mocca-message', { detail: m }))))
+    .catch(() => {})
 }
 let pingTimer = 0
 onMounted(() => {
@@ -83,8 +87,8 @@ onBeforeUnmount(() => window.removeEventListener(LOCKED_EVENT, lock))
       <RouterView />
       <BottomNav v-if="$route.meta.nav" />
       <NewSourceSheet />
-      <!-- el mensaje de amor es para Ash -->
-      <MoccaLove v-if="ui.owner" />
+      <!-- mensajitos de Ian para todas; los de amor al azar solo para Ash -->
+      <MoccaLove :random-love="ui.owner" />
     </template>
   </MotionConfig>
 </template>

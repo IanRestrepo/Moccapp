@@ -1,24 +1,28 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhArrowLeft, PhBell, PhCheck, PhEye, PhEyeSlash, PhLockKey, PhPlus, PhTrash, PhX } from '@phosphor-icons/vue'
-import { REWARD_STICKERS, type AdminRewardsDTO, type AdminPresenceDTO, type PresenceView, type RewardDTO, type RewardSticker } from '@vetquiz/shared'
+import { PhArrowLeft, PhArrowsClockwise, PhBell, PhChatCircleText, PhCheck, PhEye, PhEyeSlash, PhGearSix, PhGift, PhLockKey, PhPlus, PhTrash, PhX } from '@phosphor-icons/vue'
+import { REWARD_STICKERS, type AdminPersonDTO, type AdminRewardsDTO, type PresenceView, type RewardDTO, type RewardSticker } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
+import AdminMessages from '@/components/admin/AdminMessages.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { relativeDay } from '@/lib/format'
 import { usePhone } from '@/composables/usePhone'
 import { REWARD_STICKER_LABEL, REWARD_TINT, bonesText, costText, groupRedemptions } from '@/lib/rewards'
 
-/** Página del administrador: entregar premios, editarlos y regalar huesitos. Protegida con ADMIN_CODE. */
+/**
+ * Panel de Ian: cómo va Ash (en línea, racha, nivel, huesitos), mensajitos de Mocca,
+ * premios por entregar y ajustes (regalar huesitos, editar premios). Protegido con ADMIN_CODE.
+ */
 const router = useRouter()
 const state = ref<'loading' | 'login' | 'disabled' | 'ready'>('loading')
 const data = ref<AdminRewardsDTO | null>(null)
 const msg = ref<{ ok: boolean; text: string } | null>(null)
 const code = ref('')
 
-const say = (ok: boolean, text: string) => {
+const say = (ok: boolean, text: string): void => {
   msg.value = { ok, text }
   setTimeout(() => (msg.value = null), 3500)
 }
@@ -35,8 +39,16 @@ async function load() {
 }
 onMounted(load)
 
-// ── ¿Está usando la app? ─────────────────────────────────────
-const presence = ref<AdminPresenceDTO | null>(null)
+type Tab = 'mensajes' | 'premios' | 'ajustes'
+const tab = ref<Tab>('mensajes')
+
+// ── ¿Está usando la app? y sus números ───────────────────────
+const people = ref<AdminPersonDTO[]>([])
+const owner = computed(() => people.value[0])
+const guests = computed(() => people.value.slice(1))
+const viewLabel = (p: AdminPersonDTO) => VIEW_LABEL[p.view ?? 'other']
+const statusText = (p: AdminPersonDTO) =>
+  p.online ? `En línea · ${viewLabel(p)}${p.device ? ` · ${p.device}` : ''}` : `Última vez ${lastSeenText(p.lastSeenAt)}`
 const now = ref(Date.now())
 const VIEW_LABEL: Record<PresenceView, string> = {
   home: 'en Inicio',
@@ -63,12 +75,12 @@ function ago(iso: string): string {
   return `hace ${d} ${d === 1 ? 'día' : 'días'}`
 }
 function lastSeenText(at: string | null) {
-  if (!at) return 'todavía no ha abierto la app.'
-  return `${ago(at)} · ${relativeDay(at)} a las ${timeFmt.format(new Date(at))}`
+  if (!at) return ': todavía no ha abierto la app'
+  return `${ago(at)} · ${relativeDay(at).toLowerCase()} a las ${timeFmt.format(new Date(at))}`
 }
 async function loadPresence() {
   now.value = Date.now()
-  presence.value = await api.adminPresence().catch(() => presence.value)
+  people.value = await api.adminOverview().catch(() => people.value)
 }
 let presenceTimer = 0
 onMounted(() => (presenceTimer = window.setInterval(() => state.value === 'ready' && loadPresence(), 20_000)))
@@ -189,14 +201,16 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
       <button class="grid size-11 place-items-center rounded-full bg-surface ring-1 ring-line" aria-label="Volver" @click="router.push('/')">
         <PhArrowLeft :size="20" weight="bold" />
       </button>
-      <span class="rounded-full bg-night px-3 py-1.5 text-[12px] font-bold text-white">Administrador</span>
+      <span class="flex-1 font-display text-[18px] font-extrabold">Panel de Ian</span>
+      <button v-if="state === 'ready'" class="grid size-11 place-items-center rounded-full bg-surface ring-1 ring-line" aria-label="Actualizar" @click="load">
+        <PhArrowsClockwise :size="19" weight="bold" />
+      </button>
     </header>
-    <h1 class="mt-5 text-title font-extrabold">Premios de {{ data?.ownerName ?? 'Ashley' }}</h1>
 
     <p
       v-if="msg"
       role="status"
-      :class="['fixed inset-x-4 top-4 z-50 mx-auto max-w-[420px] rounded-[18px] px-4 py-3 text-center text-[14px] font-bold shadow-float', msg.ok ? 'bg-mint text-on-color' : 'bg-pink text-on-color']"
+      :class="['fixed inset-x-4 top-4 z-[80] mx-auto max-w-[420px] rounded-[18px] px-4 py-3 text-center text-[14px] font-bold shadow-float', msg.ok ? 'bg-mint text-on-color' : 'bg-pink text-on-color']"
     >
       {{ msg.text }}
     </p>
@@ -218,154 +232,208 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
     </form>
 
     <template v-else-if="state === 'ready' && data">
-      <!-- presencia: Ash y las invitadas -->
-      <section
-        v-for="person in presence?.people ?? []"
-        :key="person.profile"
-        class="mt-3 flex items-center gap-3 rounded-[20px] bg-surface p-4 ring-1 ring-line"
-      >
-        <span class="relative grid size-11 shrink-0 place-items-center">
-          <span v-if="person.online" class="absolute inset-0 animate-ping rounded-full bg-mint/40" />
-          <span :class="['relative size-4 rounded-full', person.online ? 'bg-mint' : 'bg-ink-3/40']" />
-        </span>
-        <span class="min-w-0 flex-1">
-          <span class="block font-display text-[17px] font-bold">
-            {{ person.name }} · {{ person.online ? `en línea, ${VIEW_LABEL[person.view ?? 'other']}` : 'no está en la app' }}
+      <!-- Ash: estado y números -->
+      <section v-if="owner" class="relative mt-4 overflow-hidden rounded-card-lg bg-night p-5 pr-32 text-white">
+        <MascotBlob
+          class="pointer-events-none absolute -bottom-2 right-0"
+          :mood="owner.online ? (owner.view === 'exam' || owner.view === 'lesson' ? 'thinking' : 'celebrating') : owner.stats.studiedToday ? 'proud' : 'sad'"
+          :size="130"
+        />
+        <p class="flex items-center gap-2 text-[13px] font-bold">
+          <span class="relative flex size-2.5">
+            <span v-if="owner.online" class="absolute inset-0 animate-ping rounded-full bg-mint" />
+            <span :class="['relative size-2.5 rounded-full', owner.online ? 'bg-mint' : 'bg-white/30']" />
           </span>
-          <span class="block text-[13px] text-ink-2">
-            <template v-if="person.online">Ahora mismo{{ person.device ? ` · desde ${person.device}` : '' }}</template>
-            <template v-else>Última vez: {{ lastSeenText(person.lastSeenAt) }}{{ person.device ? ` · ${person.device}` : '' }}</template>
-          </span>
-        </span>
+          <span :class="owner.online ? 'text-mint' : 'text-white/60'">{{ owner.online ? 'En línea' : 'Desconectada' }}</span>
+        </p>
+        <h1 class="mt-1 font-display text-[34px] font-extrabold leading-none tracking-[-0.02em]">{{ owner.name.split(' ')[0] }}</h1>
+        <p class="mt-1.5 text-[13.5px] font-medium leading-snug text-white/70">{{ statusText(owner) }}</p>
+        <p :class="['mt-3 inline-flex rounded-full px-3 py-1 text-[12.5px] font-bold', owner.stats.studiedToday ? 'bg-mint text-on-color' : 'bg-white/10 text-white/80']">
+          {{ owner.stats.studiedToday ? '✓ Hoy ya estudió' : 'Hoy todavía no estudia' }}
+        </p>
       </section>
-
-      <p class="mt-2 text-[14px] font-medium text-ink-2">
-        Saldo: <b class="text-ink">{{ bonesText(data.balance) }}</b> huesitos · ganados en total {{ bonesText(data.earnedTotal) }}
-      </p>
-      <p v-if="!data.whatsappConfigured" class="mt-3 rounded-[18px] bg-yellow-tint px-4 py-3 text-[13.5px] font-semibold">
-        Configura <code>ADMIN_WHATSAPP</code> (tu número con indicativo, ej. 573001234567) para que al reclamar le salga el botón de avisarte por WhatsApp.
-      </p>
-
-      <!-- avisos al administrador -->
-      <button
-        :disabled="adminPush !== 'idle'"
-        :class="['mt-4 flex w-full items-center gap-3 rounded-[20px] p-4 text-left ring-1 ring-line', adminPush === 'ok' ? 'bg-mint-tint' : 'bg-surface']"
-        @click="enableAdminPush"
-      >
-        <PhBell :size="22" weight="bold" class="shrink-0" />
-        <span class="min-w-0 flex-1">
-          <span class="block font-display text-[16px] font-bold">{{ adminPush === 'ok' ? 'Avisos activados en este dispositivo' : 'Avisarme cuando reclame un premio' }}</span>
-          <span class="block text-[13px] text-ink-2">Notificación en este celular o computador, además del WhatsApp.</span>
-        </span>
-      </button>
-
-      <!-- por entregar -->
-      <h2 class="mt-8 text-[22px] font-bold">Por entregar ({{ pending.length }})</h2>
-      <p v-if="!pending.length" class="mt-2 text-[14px] text-ink-2">Nada pendiente por ahora.</p>
-      <ul class="mt-3 flex flex-col gap-2">
-        <li v-for="g in pendingGroups" :key="g.key" class="rounded-[20px] bg-surface p-3 ring-1 ring-line">
-          <div class="flex items-center gap-3">
-            <span :class="['relative grid size-11 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[g.first.sticker]]">
-              <StickerIcon :name="g.first.sticker" :size="30" />
-              <span v-if="g.count > 1" class="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full bg-night px-1.5 text-[12px] font-extrabold text-white">
-                ×{{ g.count }}
-              </span>
-            </span>
-            <span class="min-w-0 flex-1">
-              <span class="block truncate font-display text-[16px] font-bold">{{ g.first.rewardName }}</span>
-              <span class="text-[12.5px] text-ink-2">{{ g.count > 1 ? 'El último: ' : '' }}{{ relativeDay(g.first.createdAt) }} · {{ costText(g.first.cost) }}</span>
-            </span>
-            <!-- entrega/cancela el más antiguo de ese premio -->
-            <button class="grid size-10 place-items-center rounded-full bg-mint text-on-color" aria-label="Marcar uno entregado" @click="resolve(g.items.at(-1)!.id, 'delivered')">
-              <PhCheck :size="18" weight="bold" />
-            </button>
-            <button class="grid size-10 place-items-center rounded-full bg-surface-2" aria-label="Cancelar uno y devolver huesitos" @click="resolve(g.items.at(-1)!.id, 'cancelled')">
-              <PhX :size="18" weight="bold" />
-            </button>
-          </div>
-          <button
-            v-if="g.count > 1"
-            class="mt-2 w-full rounded-[14px] bg-mint-tint py-2 text-[13.5px] font-bold"
-            @click="resolveMany(g.items.map((i) => i.id), 'delivered')"
-          >
-            Entregar los {{ g.count }}
-          </button>
-        </li>
-      </ul>
-
-      <!-- regalar -->
-      <h2 class="mt-8 text-[22px] font-bold">Regalar huesitos</h2>
-      <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[20px] bg-surface p-3 ring-1 ring-line">
-        <button v-for="n in [20, 50, 100, 500]" :key="n" class="h-10 rounded-full bg-surface-2 px-4 text-[14px] font-bold" @click="gift = n">+{{ n }}</button>
-        <input v-model.number="gift" type="number" min="1" :class="[input, 'w-24 shrink-0']" aria-label="Cantidad" />
-        <BaseButton size="md" :disabled="!gift || gift < 1" @click="grant">Regalar</BaseButton>
+      <div v-if="owner" class="mt-2 grid grid-cols-4 gap-2">
+        <div class="rounded-[18px] bg-orange p-3 text-on-color">
+          <p class="font-display text-[22px] font-extrabold leading-none">{{ owner.stats.streak }}</p>
+          <p class="mt-1 text-[11.5px] font-bold opacity-70">racha 🔥</p>
+        </div>
+        <div class="rounded-[18px] bg-yellow p-3 text-on-color">
+          <p class="font-display text-[22px] font-extrabold leading-none">{{ bonesText(owner.stats.bones ?? data.balance) }}</p>
+          <p class="mt-1 text-[11.5px] font-bold opacity-70">huesitos</p>
+        </div>
+        <div class="rounded-[18px] bg-sky p-3 text-on-color">
+          <p class="font-display text-[22px] font-extrabold leading-none">{{ owner.stats.level }}</p>
+          <p class="mt-1 text-[11.5px] font-bold opacity-70">nivel</p>
+        </div>
+        <div class="rounded-[18px] bg-mint p-3 text-on-color">
+          <p class="font-display text-[22px] font-extrabold leading-none">{{ owner.stats.examsCompleted }}</p>
+          <p class="mt-1 text-[11.5px] font-bold opacity-70">exámenes</p>
+        </div>
+      </div>
+      <!-- invitadas, en una línea -->
+      <div v-for="g in guests" :key="g.profile" class="mt-2 flex items-center gap-3 rounded-[18px] bg-surface px-4 py-3 ring-1 ring-line">
+        <span :class="['size-2.5 shrink-0 rounded-full', g.online ? 'bg-mint' : 'bg-ink-3/40']" />
+        <span class="min-w-0 flex-1 truncate text-[13.5px]"><b>{{ g.name }}</b> · {{ statusText(g) }}</span>
+        <span class="shrink-0 text-[12.5px] font-bold text-ink-2">nivel {{ g.stats.level }} · 🔥{{ g.stats.streak }}</span>
       </div>
 
-      <!-- premios -->
-      <h2 class="mt-8 text-[22px] font-bold">Premios</h2>
-      <ul class="mt-3 flex flex-col gap-3">
-        <li v-for="r in data.rewards" :key="r.id" :class="['rounded-[22px] p-3 ring-1 ring-line', r.active ? 'bg-surface' : 'bg-surface-2 opacity-70']">
-          <template v-if="drafts.get(r.id)">
-            <div class="flex items-center gap-2">
-              <span :class="['grid size-12 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[drafts.get(r.id)!.sticker]]">
-                <StickerIcon :name="drafts.get(r.id)!.sticker" :size="34" />
+      <!-- pestañas -->
+      <nav class="sticky top-2 z-30 mt-6 grid grid-cols-3 gap-1 rounded-full bg-surface p-1 shadow-soft ring-1 ring-line" aria-label="Secciones">
+        <button
+          v-for="t in ([
+            { id: 'mensajes', label: 'Mensajitos', icon: PhChatCircleText },
+            { id: 'premios', label: 'Premios', icon: PhGift },
+            { id: 'ajustes', label: 'Ajustes', icon: PhGearSix },
+          ] as const)"
+          :key="t.id"
+          :class="['relative flex h-11 items-center justify-center gap-1.5 rounded-full text-[13.5px] font-bold transition-colors', tab === t.id ? 'bg-night text-white' : 'text-ink-2']"
+          @click="tab = t.id"
+        >
+          <component :is="t.icon" :size="17" :weight="tab === t.id ? 'fill' : 'bold'" />
+          {{ t.label }}
+          <span v-if="t.id === 'premios' && pending.length" class="grid h-5 min-w-5 place-items-center rounded-full bg-pink px-1 text-[11px] font-extrabold text-on-color">
+            {{ pending.length }}
+          </span>
+        </button>
+      </nav>
+
+      <!-- MENSAJITOS -->
+      <div v-if="tab === 'mensajes'" class="mt-5">
+        <AdminMessages :people="people" :view-label="viewLabel" @toast="say" />
+      </div>
+
+      <!-- PREMIOS -->
+      <div v-else-if="tab === 'premios'" class="mt-5">
+        <h2 class="text-[22px] font-bold">Por entregar</h2>
+        <div v-if="!pending.length" class="mt-3 flex items-center gap-3 rounded-[20px] bg-surface p-4 ring-1 ring-line">
+          <MascotBlob mood="happy" :size="56" />
+          <p class="text-[14px] font-medium text-ink-2">Nada pendiente. Cuando reclame algo te sale aquí (y por WhatsApp).</p>
+        </div>
+        <ul class="mt-3 flex flex-col gap-2">
+          <li v-for="g in pendingGroups" :key="g.key" class="rounded-[20px] bg-surface p-3 ring-1 ring-line">
+            <div class="flex items-center gap-3">
+              <span :class="['relative grid size-11 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[g.first.sticker]]">
+                <StickerIcon :name="g.first.sticker" :size="30" />
+                <span v-if="g.count > 1" class="absolute -right-2 -top-2 grid h-6 min-w-6 place-items-center rounded-full bg-night px-1.5 text-[12px] font-extrabold text-white">
+                  ×{{ g.count }}
+                </span>
               </span>
-              <input v-model="drafts.get(r.id)!.name" :class="[input, 'flex-1']" aria-label="Nombre" />
-              <input v-model.number="drafts.get(r.id)!.cost" type="number" min="0" :class="[input, 'w-24 shrink-0']" aria-label="Costo en huesitos" />
-            </div>
-            <input v-model="drafts.get(r.id)!.description" :class="[input, 'mt-2 w-full']" placeholder="Descripción" aria-label="Descripción" />
-            <div class="mt-2 flex items-center gap-2">
-              <select v-model="drafts.get(r.id)!.sticker" :class="[input, 'w-28 shrink-0']" aria-label="Dibujo">
-                <option v-for="s in REWARD_STICKERS" :key="s" :value="s">{{ REWARD_STICKER_LABEL[s] }}</option>
-              </select>
-              <button
-                class="flex h-11 shrink-0 items-center gap-1.5 rounded-[14px] bg-surface-2 px-3 text-[13px] font-bold"
-                :aria-label="drafts.get(r.id)!.active ? 'Visible: tocar para ocultar' : 'Oculto: tocar para mostrar'"
-                @click="drafts.get(r.id)!.active = !drafts.get(r.id)!.active"
-              >
-                <component :is="drafts.get(r.id)!.active ? PhEye : PhEyeSlash" :size="16" weight="bold" />
-                <span class="hidden sm:inline">{{ drafts.get(r.id)!.active ? 'Visible' : 'Oculto' }}</span>
+              <span class="min-w-0 flex-1">
+                <span class="block truncate font-display text-[16px] font-bold">{{ g.first.rewardName }}</span>
+                <span class="text-[12.5px] text-ink-2">{{ g.count > 1 ? 'El último: ' : '' }}{{ relativeDay(g.first.createdAt) }} · {{ costText(g.first.cost) }}</span>
+              </span>
+              <!-- entrega/cancela el más antiguo de ese premio -->
+              <button class="grid size-10 place-items-center rounded-full bg-mint text-on-color" aria-label="Marcar uno entregado" @click="resolve(g.items.at(-1)!.id, 'delivered')">
+                <PhCheck :size="18" weight="bold" />
               </button>
-              <span class="flex-1" />
-              <button class="grid size-11 place-items-center rounded-[14px] text-danger" :aria-label="`Borrar ${r.name}`" @click="remove(r)">
-                <PhTrash :size="18" weight="bold" />
+              <button class="grid size-10 place-items-center rounded-full bg-surface-2" aria-label="Cancelar uno y devolver huesitos" @click="resolve(g.items.at(-1)!.id, 'cancelled')">
+                <PhX :size="18" weight="bold" />
               </button>
-              <BaseButton size="md" :disabled="!changed(r)" @click="save(r)">Guardar</BaseButton>
             </div>
-          </template>
-        </li>
-      </ul>
-
-      <!-- nuevo -->
-      <h2 class="mt-8 text-[22px] font-bold">Nuevo premio</h2>
-      <form class="mt-3 rounded-[22px] bg-surface p-3 ring-1 ring-line" @submit.prevent="create">
-        <div class="flex items-center gap-2">
-          <span :class="['grid size-12 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[fresh.sticker]]"><StickerIcon :name="fresh.sticker" :size="34" /></span>
-          <input v-model="fresh.name" :class="[input, 'flex-1']" placeholder="Ej: Peluche de perrito" aria-label="Nombre del premio nuevo" />
-          <input v-model.number="fresh.cost" type="number" min="0" :class="[input, 'w-24 shrink-0']" aria-label="Costo" />
-        </div>
-        <input v-model="fresh.description" :class="[input, 'mt-2 w-full']" placeholder="Descripción (opcional)" aria-label="Descripción del premio nuevo" />
-        <div class="mt-2 flex items-center gap-2">
-          <select v-model="fresh.sticker" :class="[input, 'w-28 shrink-0']" aria-label="Dibujo del premio nuevo">
-            <option v-for="s in REWARD_STICKERS" :key="s" :value="s">{{ REWARD_STICKER_LABEL[s] }}</option>
-          </select>
-          <span class="flex-1" />
-          <BaseButton type="submit" size="md" :disabled="!fresh.name.trim() || typeof fresh.cost !== 'number' || fresh.cost < 0"><PhPlus :size="16" weight="bold" /> Crear</BaseButton>
-        </div>
-      </form>
-
-      <!-- historial -->
-      <template v-if="resolved.length">
-        <h2 class="mt-8 text-[22px] font-bold">Historial</h2>
-        <ul class="mt-3 flex flex-col gap-1.5">
-          <li v-for="g in resolvedGroups" :key="g.key" class="flex items-center justify-between gap-3 rounded-[16px] bg-surface px-4 py-2.5 text-[14px] ring-1 ring-line">
-            <span class="truncate font-semibold">{{ g.first.rewardName }}<b v-if="g.count > 1" class="ml-1.5">×{{ g.count }}</b></span>
-            <span :class="['shrink-0 text-[12.5px] font-bold', g.first.status === 'delivered' ? 'text-success' : 'text-ink-3']">
-              {{ g.first.status === 'delivered' ? 'Entregado' : 'Cancelado' }} · {{ relativeDay(g.first.resolvedAt ?? g.first.createdAt) }}
-            </span>
+            <button
+              v-if="g.count > 1"
+              class="mt-2 w-full rounded-[14px] bg-mint-tint py-2 text-[13.5px] font-bold"
+              @click="resolveMany(g.items.map((i) => i.id), 'delivered')"
+            >
+              Entregar los {{ g.count }}
+            </button>
           </li>
         </ul>
-      </template>
+
+        <template v-if="resolved.length">
+          <h2 class="mt-8 text-[22px] font-bold">Historial</h2>
+          <ul class="mt-3 flex flex-col gap-1.5">
+            <li v-for="g in resolvedGroups" :key="g.key" class="flex items-center justify-between gap-3 rounded-[16px] bg-surface px-4 py-2.5 text-[14px] ring-1 ring-line">
+              <span class="truncate font-semibold">{{ g.first.rewardName }}<b v-if="g.count > 1" class="ml-1.5">×{{ g.count }}</b></span>
+              <span :class="['shrink-0 text-[12.5px] font-bold', g.first.status === 'delivered' ? 'text-success' : 'text-ink-3']">
+                {{ g.first.status === 'delivered' ? 'Entregado' : 'Cancelado' }} · {{ relativeDay(g.first.resolvedAt ?? g.first.createdAt) }}
+              </span>
+            </li>
+          </ul>
+        </template>
+      </div>
+
+      <!-- AJUSTES -->
+      <div v-else class="mt-5">
+        <p v-if="!data.whatsappConfigured" class="mb-4 rounded-[18px] bg-yellow-tint px-4 py-3 text-[13.5px] font-semibold">
+          Configura <code>ADMIN_WHATSAPP</code> (tu número con indicativo, ej. 573001234567) para que al reclamar le salga el botón de avisarte por WhatsApp.
+        </p>
+
+        <!-- avisos al administrador -->
+        <button
+          :disabled="adminPush !== 'idle'"
+          :class="['flex w-full items-center gap-3 rounded-[20px] p-4 text-left ring-1 ring-line', adminPush === 'ok' ? 'bg-mint-tint' : 'bg-surface']"
+          @click="enableAdminPush"
+        >
+          <PhBell :size="22" weight="bold" class="shrink-0" />
+          <span class="min-w-0 flex-1">
+            <span class="block font-display text-[16px] font-bold">{{ adminPush === 'ok' ? 'Avisos activados en este dispositivo' : 'Avisarme cuando reclame un premio' }}</span>
+            <span class="block text-[13px] text-ink-2">Notificación en este celular o computador, además del WhatsApp.</span>
+          </span>
+        </button>
+
+        <!-- regalar -->
+        <h2 class="mt-8 text-[22px] font-bold">Regalar huesitos</h2>
+        <p class="mt-1 text-[13.5px] text-ink-2">Tiene {{ bonesText(data.balance) }} · ha ganado {{ bonesText(data.earnedTotal) }} en total</p>
+        <div class="mt-3 flex flex-wrap items-center gap-2 rounded-[20px] bg-surface p-3 ring-1 ring-line">
+          <button v-for="n in [20, 50, 100, 500]" :key="n" class="h-10 rounded-full bg-surface-2 px-4 text-[14px] font-bold" @click="gift = n">+{{ n }}</button>
+          <input v-model.number="gift" type="number" min="1" :class="[input, 'w-24 shrink-0']" aria-label="Cantidad" />
+          <BaseButton size="md" :disabled="!gift || gift < 1" @click="grant">Regalar</BaseButton>
+        </div>
+
+        <!-- premios -->
+        <h2 class="mt-8 text-[22px] font-bold">Premios</h2>
+        <ul class="mt-3 flex flex-col gap-3">
+          <li v-for="r in data.rewards" :key="r.id" :class="['rounded-[22px] p-3 ring-1 ring-line', r.active ? 'bg-surface' : 'bg-surface-2 opacity-70']">
+            <template v-if="drafts.get(r.id)">
+              <div class="flex items-center gap-2">
+                <span :class="['grid size-12 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[drafts.get(r.id)!.sticker]]">
+                  <StickerIcon :name="drafts.get(r.id)!.sticker" :size="34" />
+                </span>
+                <input v-model="drafts.get(r.id)!.name" :class="[input, 'flex-1']" aria-label="Nombre" />
+                <input v-model.number="drafts.get(r.id)!.cost" type="number" min="0" :class="[input, 'w-24 shrink-0']" aria-label="Costo en huesitos (0 = gratis)" />
+              </div>
+              <input v-model="drafts.get(r.id)!.description" :class="[input, 'mt-2 w-full']" placeholder="Descripción" aria-label="Descripción" />
+              <div class="mt-2 flex items-center gap-2">
+                <select v-model="drafts.get(r.id)!.sticker" :class="[input, 'w-28 shrink-0']" aria-label="Dibujo">
+                  <option v-for="s in REWARD_STICKERS" :key="s" :value="s">{{ REWARD_STICKER_LABEL[s] }}</option>
+                </select>
+                <button
+                  class="flex h-11 shrink-0 items-center gap-1.5 rounded-[14px] bg-surface-2 px-3 text-[13px] font-bold"
+                  :aria-label="drafts.get(r.id)!.active ? 'Visible: tocar para ocultar' : 'Oculto: tocar para mostrar'"
+                  @click="drafts.get(r.id)!.active = !drafts.get(r.id)!.active"
+                >
+                  <component :is="drafts.get(r.id)!.active ? PhEye : PhEyeSlash" :size="16" weight="bold" />
+                  <span class="hidden sm:inline">{{ drafts.get(r.id)!.active ? 'Visible' : 'Oculto' }}</span>
+                </button>
+                <span class="flex-1" />
+                <button class="grid size-11 place-items-center rounded-[14px] text-danger" :aria-label="`Borrar ${r.name}`" @click="remove(r)">
+                  <PhTrash :size="18" weight="bold" />
+                </button>
+                <BaseButton size="md" :disabled="!changed(r)" @click="save(r)">Guardar</BaseButton>
+              </div>
+            </template>
+          </li>
+        </ul>
+
+        <!-- nuevo -->
+        <h2 class="mt-8 text-[22px] font-bold">Nuevo premio</h2>
+        <form class="mt-3 rounded-[22px] bg-surface p-3 ring-1 ring-line" @submit.prevent="create">
+          <div class="flex items-center gap-2">
+            <span :class="['grid size-12 shrink-0 place-items-center rounded-[14px]', REWARD_TINT[fresh.sticker]]"><StickerIcon :name="fresh.sticker" :size="34" /></span>
+            <input v-model="fresh.name" :class="[input, 'flex-1']" placeholder="Ej: Peluche de perrito" aria-label="Nombre del premio nuevo" />
+            <input v-model.number="fresh.cost" type="number" min="0" :class="[input, 'w-24 shrink-0']" aria-label="Costo (0 = gratis)" />
+          </div>
+          <input v-model="fresh.description" :class="[input, 'mt-2 w-full']" placeholder="Descripción (opcional)" aria-label="Descripción del premio nuevo" />
+          <div class="mt-2 flex items-center gap-2">
+            <select v-model="fresh.sticker" :class="[input, 'w-28 shrink-0']" aria-label="Dibujo del premio nuevo">
+              <option v-for="s in REWARD_STICKERS" :key="s" :value="s">{{ REWARD_STICKER_LABEL[s] }}</option>
+            </select>
+            <span class="flex-1" />
+            <BaseButton type="submit" size="md" :disabled="!fresh.name.trim() || typeof fresh.cost !== 'number' || fresh.cost < 0"><PhPlus :size="16" weight="bold" /> Crear</BaseButton>
+          </div>
+        </form>
+      </div>
     </template>
 
     <div v-else class="flex min-h-[40dvh] items-center justify-center"><MascotBlob mood="thinking" :size="100" /></div>

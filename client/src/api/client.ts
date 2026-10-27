@@ -9,6 +9,10 @@ import type {
   ExamInProgressDTO,
   AdminRewardsDTO,
   AdminPresenceDTO,
+  AdminPersonDTO,
+  PingResponse,
+  SentMoccaMessageDTO,
+  MoccaMessageMood,
   CollectionDTO,
   CollectionInput,
   StudyDeckDTO,
@@ -200,10 +204,15 @@ export const api = {
   redeem: (rewardId: string) => request<RedeemResponse>('POST', `/rewards/${rewardId}/redeem`),
 
   // Presencia: la app avisa que está abierta
-  ping: (view: PresenceView) => request<void>('POST', '/presence', { view }),
+  ping: (view: PresenceView) => request<PingResponse>('POST', '/presence', { view }),
+  messageSeen: (id: string) => request<void>('POST', `/presence/messages/${id}/seen`),
 
   // Administrador
   adminPresence: () => request<AdminPresenceDTO>('GET', '/admin/presence'),
+  adminOverview: () => request<{ people: AdminPersonDTO[] }>('GET', '/admin/overview').then((r) => r.people),
+  adminMessages: () => request<{ messages: SentMoccaMessageDTO[] }>('GET', '/admin/messages').then((r) => r.messages),
+  sendMoccaMessage: (body: { profile: string; text: string; mood: MoccaMessageMood; push: boolean }) =>
+    request<{ message: SentMoccaMessageDTO }>('POST', '/admin/messages', body).then((r) => r.message),
   adminStatus: () => request<{ required: boolean; granted: boolean; disabled: boolean }>('GET', '/admin/status'),
   adminLogin: (code: string) => request<{ granted: boolean }>('POST', '/admin/login', { code }),
   adminRewards: () => request<AdminRewardsDTO>('GET', '/admin/rewards'),

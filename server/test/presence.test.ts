@@ -38,7 +38,7 @@ test('sin señales: no está en línea y no hay última vez', async () => {
 })
 
 test('una señal de Ashley la pone en línea, con pantalla y dispositivo', async () => {
-  assert.equal((await post('/presence', { view: 'exam' }, { 'User-Agent': IPHONE })).status, 204)
+  assert.equal((await post('/presence', { view: 'exam' }, { 'User-Agent': IPHONE })).status, 200)
   const p = (await (await fetch(`${base}/admin/presence`, { headers: { cookie: admin } })).json()).people[0]
   assert.equal(p.online, true)
   assert.equal(p.view, 'exam')
@@ -66,8 +66,28 @@ test('pasada la ventana deja de estar en línea, y la última vez sobrevive a un
 })
 
 test('vista desconocida cuenta como "other" y el dispositivo se reconoce', async () => {
-  assert.equal((await post('/presence', { view: 'hackeo' })).status, 204)
+  assert.equal((await post('/presence', { view: 'hackeo' })).status, 200)
   assert.equal((await getPresence()).view, 'other')
   assert.equal(deviceFrom('Mozilla/5.0 (Linux; Android 14; Pixel) Mobile Safari'), 'Android')
   assert.equal(deviceFrom(undefined), null)
+})
+
+test('mensajitos de Ian: le llegan con la señal de vida y quedan "vistos"', async () => {
+  const cookie = admin
+  const sent = await fetch(`${base}/admin/messages`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', cookie },
+    body: JSON.stringify({ profile: 'ash', text: '¿Cómo vas, amor?', mood: 'happy' }),
+  })
+  assert.equal(sent.status, 201)
+  // la app de Ash (sin cookie de admin en estas pruebas el acceso está abierto) recibe el mensaje
+  const ping = await (await post('/presence', { view: 'home' })).json()
+  assert.deepEqual(ping.messages.map((m: { text: string }) => m.text), ['¿Cómo vas, amor?'])
+  await post(`/presence/messages/${ping.messages[0].id}/seen`, {})
+  assert.deepEqual((await (await post('/presence', { view: 'home' })).json()).messages, [])
+  const list = (await (await fetch(`${base}/admin/messages`, { headers: { cookie } })).json()).messages
+  assert.ok(list[0].seenAt)
+  // un admin abriendo la app no "se roba" los mensajes de Ash
+  await fetch(`${base}/admin/messages`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ profile: 'ash', text: 'otro' }) })
+  assert.deepEqual((await (await post('/presence', { view: 'home' }, { cookie })).json()).messages, [])
 })

@@ -335,6 +335,25 @@ export const collectionSources = pgTable(
   (t) => [primaryKey({ name: 'collection_sources_pk', columns: [t.collectionId, t.sourceId] })],
 )
 
+// ── mocca_messages ───────────────────────────────────────────
+// Mensajitos que Ian manda desde el panel: Mocca se los dice a Ash en la app (y opcionalmente al celular).
+export const moccaMessages = pgTable(
+  'mocca_messages',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    profile: text('profile').notNull(),
+    text: text('text').notNull(),
+    mood: text('mood').notNull().default('happy'),
+    push: boolean('push').notNull().default(false),
+    ...timestamps,
+    /** La app lo recibió (al consultar) */
+    deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+    /** Mocca se lo mostró */
+    seenAt: timestamp('seen_at', { withTimezone: true }),
+  },
+  (t) => [index('mocca_messages_profile_idx').on(t.profile, t.seenAt)],
+)
+
 // ── push_subscriptions ───────────────────────────────────────
 // Un registro por celular/navegador que activó los avisos. admin = el del administrador (avisos de premios).
 export const pushSubscriptions = pgTable('push_subscriptions', {

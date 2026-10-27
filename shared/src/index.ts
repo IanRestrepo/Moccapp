@@ -559,6 +559,42 @@ export const PushSubscribeSchema = z.object({
   admin: z.boolean().optional(),
 })
 
+// ── Mensajitos de Ian (Mocca los dice) ──────────────────────
+export const MOCCA_MESSAGE_MOODS = ['happy', 'celebrating', 'proud', 'amazed'] as const
+export type MoccaMessageMood = (typeof MOCCA_MESSAGE_MOODS)[number]
+
+export const SendMoccaMessageSchema = z.object({
+  profile: z.string().min(2).max(20),
+  text: z.string().trim().min(1, 'Escribe el mensajito.').max(160),
+  mood: z.enum(MOCCA_MESSAGE_MOODS).default('happy'),
+  /** Además, como notificación al celular (si los avisos están activados) */
+  push: z.boolean().default(false),
+})
+
+export interface MoccaMessageDTO {
+  id: string
+  text: string
+  mood: MoccaMessageMood
+}
+
+export interface SentMoccaMessageDTO extends MoccaMessageDTO {
+  profile: string
+  createdAt: string
+  deliveredAt: string | null
+  seenAt: string | null
+}
+
+export interface PingResponse {
+  /** Mensajitos nuevos para mostrar */
+  messages: MoccaMessageDTO[]
+}
+
+export interface AdminPersonDTO extends PresenceDTO {
+  profile: string
+  name: string
+  stats: { xp: number; level: number; streak: number; bones: number | null; examsCompleted: number; studiedToday: boolean }
+}
+
 // ── Presencia (solo el administrador la ve) ─────────────────
 export const PRESENCE_VIEWS = ['home', 'sources', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
 export type PresenceView = (typeof PRESENCE_VIEWS)[number]
