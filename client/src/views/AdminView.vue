@@ -1,7 +1,32 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhArrowLeft, PhArrowsClockwise, PhBell, PhChatCircleText, PhCheck, PhEye, PhEyeSlash, PhGearSix, PhGift, PhLockKey, PhPlus, PhTrash, PhX } from '@phosphor-icons/vue'
+import {
+  PhArrowLeft,
+  PhArrowsClockwise,
+  PhBell,
+  PhBookOpen,
+  PhCards,
+  PhChartBar,
+  PhChatCircleText,
+  PhCheck,
+  PhClockCounterClockwise,
+  PhDeviceMobile,
+  PhDog,
+  PhExam,
+  PhEye,
+  PhEyeSlash,
+  PhFolders,
+  PhGearSix,
+  PhGift,
+  PhHouse,
+  PhLockKey,
+  PhPath,
+  PhPlus,
+  PhSliders,
+  PhTrash,
+  PhX,
+} from '@phosphor-icons/vue'
 import { REWARD_STICKERS, type AdminPersonDTO, type AdminRewardsDTO, type PresenceView, type RewardDTO, type RewardSticker } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
@@ -50,11 +75,31 @@ const viewLabel = (p: AdminPersonDTO) => VIEW_LABEL[p.view ?? 'other']
 // el dispositivo se muestra siempre (en línea y en la última vez)
 const statusText = (p: AdminPersonDTO) =>
   p.online
-    ? `En línea · ${viewLabel(p)}${p.device ? ` · desde ${p.device}` : ''}`
+    ? `Ahora mismo${p.device ? ` · desde ${p.device}` : ''}`
     : `Última vez ${lastSeenText(p.lastSeenAt)}${p.device ? ` · desde ${p.device}` : ''}`
+// la sección, bien grande: dónde está ahora (o dónde estuvo de último)
+const VIEW_ICON: Record<PresenceView, unknown> = {
+  home: PhHouse,
+  sources: PhFolders,
+  configure: PhSliders,
+  study: PhCards,
+  path: PhPath,
+  lesson: PhBookOpen,
+  exam: PhExam,
+  results: PhChartBar,
+  history: PhClockCounterClockwise,
+  rewards: PhGift,
+  mocca: PhDog,
+  other: PhDeviceMobile,
+}
+const sectionIcon = (p: AdminPersonDTO) => VIEW_ICON[p.view ?? 'other']
+const sectionText = (p: AdminPersonDTO) => {
+  const label = viewLabel(p)
+  return (p.online ? 'Está ' : 'Lo último: ') + label
+}
 const now = ref(Date.now())
 const VIEW_LABEL: Record<PresenceView, string> = {
-  home: 'en Inicio',
+  home: 'en el Inicio',
   sources: 'viendo sus fuentes',
   configure: 'armando un examen',
   study: 'estudiando con tarjetas',
@@ -250,6 +295,14 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
           <span :class="owner.online ? 'text-mint' : 'text-white/60'">{{ owner.online ? 'En línea' : 'Desconectada' }}</span>
         </p>
         <h1 class="mt-1 font-display text-[34px] font-extrabold leading-none tracking-[-0.02em]">{{ owner.name.split(' ')[0] }}</h1>
+        <p
+          v-if="owner.view"
+          :class="['mt-2.5 inline-flex max-w-full items-center gap-2 rounded-[14px] px-3 py-2 text-[15px] font-extrabold leading-tight', owner.online ? 'bg-mint text-on-color' : 'bg-white/10 text-white/85']"
+          aria-label="Sección de la app"
+        >
+          <component :is="sectionIcon(owner)" :size="20" weight="bold" class="shrink-0" />
+          {{ sectionText(owner) }}
+        </p>
         <p class="mt-1.5 text-[13.5px] font-medium leading-snug text-white/70">{{ statusText(owner) }}</p>
         <p :class="['mt-3 inline-flex rounded-full px-3 py-1 text-[12.5px] font-bold', owner.stats.studiedToday ? 'bg-mint text-on-color' : 'bg-white/10 text-white/80']">
           {{ owner.stats.studiedToday ? '✓ Hoy ya estudió' : 'Hoy todavía no estudia' }}
@@ -288,6 +341,14 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
             {{ g.stats.studiedToday ? '✓ Hoy estudió' : 'Hoy no ha estudiado' }}
           </span>
         </div>
+        <p
+          v-if="g.view"
+          :class="['mt-2 inline-flex max-w-full items-center gap-1.5 rounded-[12px] px-2.5 py-1.5 text-[14px] font-bold leading-tight', g.online ? 'bg-mint-tint text-success' : 'bg-surface-2']"
+          aria-label="Sección de la app"
+        >
+          <component :is="sectionIcon(g)" :size="17" weight="bold" class="shrink-0" />
+          {{ sectionText(g) }}
+        </p>
         <p class="mt-1.5 text-[13.5px] leading-snug text-ink-2">{{ statusText(g) }}</p>
         <div class="mt-3 grid grid-cols-4 gap-1.5 text-center">
           <div class="rounded-[14px] bg-surface-2 py-2">
