@@ -47,8 +47,11 @@ const people = ref<AdminPersonDTO[]>([])
 const owner = computed(() => people.value[0])
 const guests = computed(() => people.value.slice(1))
 const viewLabel = (p: AdminPersonDTO) => VIEW_LABEL[p.view ?? 'other']
+// el dispositivo se muestra siempre (en línea y en la última vez)
 const statusText = (p: AdminPersonDTO) =>
-  p.online ? `En línea · ${viewLabel(p)}${p.device ? ` · ${p.device}` : ''}` : `Última vez ${lastSeenText(p.lastSeenAt)}`
+  p.online
+    ? `En línea · ${viewLabel(p)}${p.device ? ` · desde ${p.device}` : ''}`
+    : `Última vez ${lastSeenText(p.lastSeenAt)}${p.device ? ` · desde ${p.device}` : ''}`
 const now = ref(Date.now())
 const VIEW_LABEL: Record<PresenceView, string> = {
   home: 'en Inicio',
@@ -271,11 +274,40 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
         </div>
       </div>
       <!-- invitadas, en una línea -->
-      <div v-for="g in guests" :key="g.profile" class="mt-2 flex items-center gap-3 rounded-[18px] bg-surface px-4 py-3 ring-1 ring-line">
-        <span :class="['size-2.5 shrink-0 rounded-full', g.online ? 'bg-mint' : 'bg-ink-3/40']" />
-        <span class="min-w-0 flex-1 truncate text-[13.5px]"><b>{{ g.name }}</b> · {{ statusText(g) }}</span>
-        <span class="shrink-0 text-[12.5px] font-bold text-ink-2">nivel {{ g.stats.level }} · 🔥{{ g.stats.streak }}</span>
-      </div>
+      <!-- invitadas: tarjeta completa, más pequeña que la de Ash -->
+      <section v-for="g in guests" :key="g.profile" class="mt-3 rounded-[22px] bg-surface p-4 ring-1 ring-line">
+        <div class="flex items-center gap-3">
+          <span class="relative flex size-2.5 shrink-0">
+            <span v-if="g.online" class="absolute inset-0 animate-ping rounded-full bg-mint" />
+            <span :class="['relative size-2.5 rounded-full', g.online ? 'bg-mint' : 'bg-ink-3/40']" />
+          </span>
+          <span class="font-display text-[18px] font-extrabold">{{ g.name }}</span>
+          <span :class="['text-[12.5px] font-bold', g.online ? 'text-success' : 'text-ink-3']">{{ g.online ? 'En línea' : 'Desconectada' }}</span>
+          <span class="flex-1" />
+          <span :class="['rounded-full px-2.5 py-0.5 text-[11.5px] font-bold', g.stats.studiedToday ? 'bg-mint-tint text-success' : 'bg-surface-2 text-ink-2']">
+            {{ g.stats.studiedToday ? '✓ Hoy estudió' : 'Hoy no ha estudiado' }}
+          </span>
+        </div>
+        <p class="mt-1.5 text-[13.5px] leading-snug text-ink-2">{{ statusText(g) }}</p>
+        <div class="mt-3 grid grid-cols-4 gap-1.5 text-center">
+          <div class="rounded-[14px] bg-surface-2 py-2">
+            <p class="font-display text-[17px] font-extrabold leading-none">{{ g.stats.streak }}</p>
+            <p class="mt-0.5 text-[11px] font-bold text-ink-2">racha 🔥</p>
+          </div>
+          <div class="rounded-[14px] bg-surface-2 py-2">
+            <p class="font-display text-[17px] font-extrabold leading-none">{{ g.stats.level }}</p>
+            <p class="mt-0.5 text-[11px] font-bold text-ink-2">nivel</p>
+          </div>
+          <div class="rounded-[14px] bg-surface-2 py-2">
+            <p class="font-display text-[17px] font-extrabold leading-none">{{ g.stats.xp }}</p>
+            <p class="mt-0.5 text-[11px] font-bold text-ink-2">XP</p>
+          </div>
+          <div class="rounded-[14px] bg-surface-2 py-2">
+            <p class="font-display text-[17px] font-extrabold leading-none">{{ g.stats.examsCompleted }}</p>
+            <p class="mt-0.5 text-[11px] font-bold text-ink-2">exámenes</p>
+          </div>
+        </div>
+      </section>
 
       <!-- pestañas -->
       <nav class="sticky top-2 z-30 mt-6 grid grid-cols-3 gap-1 rounded-full bg-surface p-1 shadow-soft ring-1 ring-line" aria-label="Secciones">

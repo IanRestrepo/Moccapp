@@ -34,14 +34,15 @@ export function deviceFrom(ua: string | undefined): string | null {
 
 export async function recordPing(view: PresenceView, ua: string | undefined, now = new Date()) {
   const profile = currentProfile()
-  const seen: Seen = { at: now, view, device: deviceFrom(ua) }
+  const seen: Seen = { at: now, view, device: deviceFrom(ua) ?? live.get(profile)?.device ?? null }
   live.set(profile, seen)
   const prev = persisted.get(profile)
   const stale =
     SERVERLESS || !prev || now.getTime() - prev.at.getTime() >= PERSIST_EVERY_MS || prev.view !== seen.view || prev.device !== seen.device
   if (!stale) return
   persisted.set(profile, seen)
-  const values = { lastSeenAt: seen.at, lastSeenView: seen.view, lastSeenDevice: seen.device }
+  // si esta señal no dice qué dispositivo es, se conserva el último conocido
+  const values = { lastSeenAt: seen.at, lastSeenView: seen.view, ...(seen.device ? { lastSeenDevice: seen.device } : {}) }
   await db
     .insert(userStats)
     .values({ id: statsIdFor(profile), displayName: displayNameFor(profile), ...values })
