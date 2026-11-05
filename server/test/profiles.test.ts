@@ -9,6 +9,7 @@ process.env.DATABASE_URL = 'pglite://memory'
 process.env.GEMINI_API_KEY = 'test-key-1234567890'
 process.env.ACCESS_CODE = 'codigo-viejo-123'
 process.env.PROFILE_CODES = 'ash:codigo-ash-456,magola:codigo-magola-789'
+process.env.EXTRA_PROFILE_CODES = 'mama:codigo-mama-321'
 
 const { createApp } = await import('../src/app.js')
 const { db, closeDb } = await import('../src/db/client.js')
@@ -94,4 +95,19 @@ test('los mensajitos de Mocca son solo para Ash: a Magola no se pueden mandar', 
   const { cookie } = await enter('codigo-magola-789', '10.0.0.9')
   const ping = await (await fetch(`${base}/presence`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: '{"view":"home"}' })).json()
   assert.deepEqual(ping.messages, [])
+})
+
+test('Mamá entra con su código aparte, sin huesitos, premios ni mensajitos, y sin tocar a Ash ni a Magola', async () => {
+  const mama = await enter('codigo-mama-321', '10.0.0.10')
+  const body = await mama.res.json()
+  assert.deepEqual([body.profile, body.owner, body.name], ['mama', false, 'Mamá'])
+  assert.equal((await get('/rewards', mama.cookie)).status, 403)
+  const stats = (await (await get('/stats', mama.cookie)).json()).stats
+  assert.deepEqual([stats.bones, stats.displayName], [0, 'Mamá'])
+  const ping = await (await fetch(`${base}/presence`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie: mama.cookie }, body: '{"view":"exam"}' })).json()
+  assert.deepEqual(ping.messages, [])
+  // Ash y Magola siguen con sus nombres y su fila de siempre
+  assert.equal((await (await get('/stats', legacy)).json()).stats.displayName, 'Ashley')
+  const magola = await enter('codigo-magola-789', '10.0.0.11')
+  assert.equal((await (await get('/stats', magola.cookie)).json()).stats.displayName, 'Magola')
 })

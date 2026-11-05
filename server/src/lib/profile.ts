@@ -21,9 +21,12 @@ export function statsIdFor(profile = currentProfile()): number {
   return i === -1 ? 1 : i + 1
 }
 
+// nombres con tilde o distintos al del código
+const DISPLAY_NAMES: Record<string, string> = { mama: 'Mamá' }
+
 export function displayNameFor(profile = currentProfile()): string {
   if (profile === OWNER) return env.OWNER_NAME
-  return profile.charAt(0).toUpperCase() + profile.slice(1)
+  return DISPLAY_NAMES[profile] ?? profile.charAt(0).toUpperCase() + profile.slice(1)
 }
 
 /** Fuentes que ve: la dueña ve las suyas; las invitadas ven las de la dueña y las propias */

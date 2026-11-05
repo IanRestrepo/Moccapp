@@ -72,4 +72,11 @@ const EnvSchema = z.object({
   MIGRATIONS_DIR: z.string().optional(),
 })
 
-export const env = EnvSchema.parse(process.env)
+// EXTRA_PROFILE_CODES: más perfiles (ej. "mama:xxxx") en otra variable, para agregarlos o quitarlos
+// sin tocar la de Ash y Magola. Van después de ellas, así sus datos no cambian de fila.
+const joinCodes = (...parts: (string | undefined)[]) =>
+  parts
+    .map((p) => p?.trim())
+    .filter(Boolean)
+    .join(',') || undefined
+export const env = EnvSchema.parse({ ...process.env, PROFILE_CODES: joinCodes(process.env.PROFILE_CODES, process.env.EXTRA_PROFILE_CODES) })
