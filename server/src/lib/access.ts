@@ -80,7 +80,9 @@ export function enterAccess(req: Request, res: Response) {
   if (a && a.until > now && a.n >= 10) throw new AppError(429, 'TOO_MANY_ATTEMPTS', 'Demasiados intentos. Espera unos minutos.')
 
   const { code } = z.object({ code: z.string().trim().min(1).max(200) }).parse(req.body)
-  const match = loginCodes().find((p) => sameToken(tokenFor(code), tokenFor(p.code)))
+  // el celular pone mayúscula al inicio o espacios: no importan
+  const loose = (c: string) => c.replace(/\s+/g, '').toLowerCase()
+  const match = loginCodes().find((p) => sameToken(tokenFor(loose(code)), tokenFor(loose(p.code))))
   if (!match) {
     attempts.set(ip, { n: (a && a.until > now ? a.n : 0) + 1, until: now + 10 * 60_000 })
     throw new AppError(401, 'WRONG_CODE', 'Ese código no es. Revisa mayúsculas y espacios.')

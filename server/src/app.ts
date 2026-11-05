@@ -3,6 +3,7 @@ import cors from 'cors'
 import express from 'express'
 import { env } from './env.js'
 import { accessStatus, enterAccess, requireAccess } from './lib/access.js'
+import { profileNames } from './lib/profile.js'
 import { AppError, errorHandler } from './lib/errors.js'
 import { examsRouter } from './routes/exams.js'
 import { adminRouter, presenceRouter, rewardsRouter } from './routes/rewards.js'
@@ -23,7 +24,7 @@ export function createApp() {
   // texto pegado hasta ~400k caracteres
   app.use(express.json({ limit: '2mb' }))
 
-  app.get('/api/health', (_req, res) => res.json({ ok: true, model: env.GEMINI_MODEL }))
+  app.get('/api/health', (_req, res) => res.json({ ok: true, model: env.GEMINI_MODEL, profiles: profileNames() }))
   app.use('/api/uploads', uploadsRouter)
   app.use('/api/cron', cronRouter)
   app.use('/api', requireAccess)

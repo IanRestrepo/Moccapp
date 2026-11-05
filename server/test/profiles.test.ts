@@ -98,7 +98,8 @@ test('los mensajitos de Mocca son solo para Ash: a Magola no se pueden mandar', 
 })
 
 test('Mamá entra con su código aparte, sin huesitos, premios ni mensajitos, y sin tocar a Ash ni a Magola', async () => {
-  const mama = await enter('codigo-mama-321', '10.0.0.10')
+  // como lo escribe el celular: mayúscula al inicio y un espacio al final
+  const mama = await enter('Codigo-Mama-321 ', '10.0.0.10')
   const body = await mama.res.json()
   assert.deepEqual([body.profile, body.owner, body.name], ['mama', false, 'Mamá'])
   assert.equal((await get('/rewards', mama.cookie)).status, 403)
