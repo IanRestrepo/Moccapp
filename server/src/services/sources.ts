@@ -3,7 +3,7 @@ import { SOURCE_COLORS, type BankStats, type Difficulty, type QuestionType, type
 import { db } from '../db/client.js'
 import { exams, questionBank, sources, type NewSource, type Source } from '../db/schema.js'
 import { AppError, Errors } from '../lib/errors.js'
-import { currentProfile, OWNER, visibleOwners } from '../lib/profile.js'
+import { currentProfile, OWNER, scopedHash, visibleOwners } from '../lib/profile.js'
 import { isFilling, isRunning, queueGeneration } from './bank.js'
 import { hashFile, hashText, hashYoutube, normalizeText } from './ingest/hash.js'
 import { detectFileKind, formatFromMime, titleFromFilename } from './ingest/files.js'
@@ -66,7 +66,7 @@ export async function createFileSource(
   title?: string,
 ): Promise<CreateResult> {
   const kind = detectFileKind(file.originalname, file.mimetype, file.buffer)
-  const contentHash = hashFile(file.buffer)
+  const contentHash = scopedHash(hashFile(file.buffer))
   const dup = await findDuplicate(contentHash)
   if (dup) return dup
 
@@ -99,7 +99,7 @@ export async function createFileSource(
 
 export async function createTextSource(text: string, title?: string): Promise<CreateResult> {
   const normalized = normalizeText(text)
-  const contentHash = hashText(normalized)
+  const contentHash = scopedHash(hashText(normalized))
   const dup = await findDuplicate(contentHash)
   if (dup) return dup
   const firstLine = normalized.split('\n')[0]!.slice(0, 60)
@@ -115,7 +115,7 @@ export async function createTextSource(text: string, title?: string): Promise<Cr
 export async function createYoutubeSource(url: string, title?: string): Promise<CreateResult> {
   const videoId = parseYoutubeId(url)
   if (!videoId) throw Errors.invalidYoutube()
-  const contentHash = hashYoutube(videoId)
+  const contentHash = scopedHash(hashYoutube(videoId))
   const dup = await findDuplicate(contentHash)
   if (dup) return dup
   const meta = await fetchYoutubeMeta(videoId) // lanza VIDEO_UNAVAILABLE si es privado o no existe

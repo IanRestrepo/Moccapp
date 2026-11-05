@@ -112,3 +112,22 @@ test('Mamá entra con su código aparte, sin huesitos, premios ni mensajitos, y 
   const magola = await enter('codigo-magola-789', '10.0.0.11')
   assert.equal((await (await get('/stats', magola.cookie)).json()).stats.displayName, 'Magola')
 })
+
+test('Mamá no ve las fuentes de Ash; si sube lo mismo que Ash, tiene su propia copia', async () => {
+  const mama = await enter('codigo-mama-321', '10.0.0.12')
+  const before = (await (await get('/sources', mama.cookie)).json()).sources
+  assert.equal(before.length, 0)
+  const text = 'La célula es la unidad básica de la vida. '.repeat(10)
+  const post = (cookie: string) =>
+    fetch(`${base}/sources`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ kind: 'text', text }) })
+  const fromAsh = await (await post(legacy)).json()
+  const fromMama = await (await post(mama.cookie)).json()
+  assert.notEqual(fromMama.source.id, fromAsh.source.id)
+  const mine = (await (await get('/sources', mama.cookie)).json()).sources
+  assert.deepEqual(mine.map((s: { id: string }) => s.id), [fromMama.source.id])
+  // Ash no ve la de Mamá
+  const ash = (await (await get('/sources', legacy)).json()).sources.map((s: { id: string }) => s.id)
+  assert.ok(!ash.includes(fromMama.source.id))
+  // y Mamá no puede abrir la de Ash
+  assert.equal((await get(`/sources/${fromAsh.source.id}`, mama.cookie)).status, 404)
+})

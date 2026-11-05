@@ -29,5 +29,16 @@ export function displayNameFor(profile = currentProfile()): string {
   return DISPLAY_NAMES[profile] ?? profile.charAt(0).toUpperCase() + profile.slice(1)
 }
 
-/** Fuentes que ve: la dueña ve las suyas; las invitadas ven las de la dueña y las propias */
-export const visibleOwners = (profile = currentProfile()) => (profile === OWNER ? [OWNER] : [OWNER, profile])
+/** Invitadas que pueden estudiar con las fuentes de Ash (las demás, p. ej. Mamá, solo ven las suyas) */
+const SEES_OWNER_SOURCES = new Set(['magola'])
+
+/** Fuentes que ve: la dueña, las suyas; Magola, las de Ash y las propias; el resto, solo las propias */
+export const visibleOwners = (profile = currentProfile()) =>
+  profile === OWNER ? [OWNER] : SEES_OWNER_SOURCES.has(profile) ? [OWNER, profile] : [profile]
+
+/**
+ * Huella de una fuente para no repetirla: Ash y Magola comparten (si ya está, se reutiliza);
+ * una invitada aparte (Mamá) tiene su propia copia, que Ash nunca ve.
+ */
+export const scopedHash = (hash: string, profile = currentProfile()) =>
+  profile === OWNER || SEES_OWNER_SOURCES.has(profile) ? hash : `${profile}:${hash}`
