@@ -1,13 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { motion } from 'motion-v'
-import { PhArrowLeft, PhArrowsClockwise, PhBookOpenText, PhCards, PhCheckCircle, PhCircle, PhExam, PhGraph, PhListChecks } from '@phosphor-icons/vue'
+import { AnimatePresence, motion } from 'motion-v'
+import { PhArrowLeft, PhArrowsClockwise, PhBookOpenText, PhCards, PhCheckCircle, PhCircle, PhExam, PhGraph, PhHeadphones, PhListChecks, PhSpeakerHigh } from '@phosphor-icons/vue'
 import type { StudyGuideDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import GuideSectionBody from '@/components/guide/GuideSectionBody.vue'
 import ConceptMap from '@/components/guide/ConceptMap.vue'
+import GuidePlayer from '@/components/guide/GuidePlayer.vue'
+import { guideScript, useGuideReader } from '@/composables/useGuideReader'
 import { api, ApiRequestError } from '@/api/client'
 import { colorClasses, spring } from '@/lib/motion'
 import { paragraphs, richText } from '@/lib/richText'
@@ -70,6 +72,40 @@ async function retry() {
 
 const guide = computed(() => data.value?.guide ?? null)
 const color = computed(() => colorClasses[data.value?.color ?? 'lilac'])
+
+// ── Audiolibro: Mocca le lee la guía ──
+const reader = useGuideReader(`vq-guide-audio-${id}`)
+const showPlayer = ref(false)
+watch(
+  guide,
+  (g) => {
+    if (!g || !data.value) return
+    reader.load(guideScript(data.value.title, g))
+    reader.setTitles((s) => (s < 0 ? 'Introducción' : (g.sections[s]?.title ?? data.value!.title)))
+  },
+  { immediate: true },
+)
+const listenMinutes = computed(() => Math.max(1, Math.round(reader.chunks.value.reduce((n, c) => n + c.text.split(' ').length, 0) / 150)))
+function listen(fromSection?: number) {
+  showPlayer.value = true
+  tab.value = 'resumen'
+  reader.play(fromSection)
+}
+function closePlayer() {
+  reader.stop()
+  showPlayer.value = false
+}
+const playerTitle = computed(() => (reader.section.value < 0 ? 'Introducción' : (guide.value?.sections[reader.section.value]?.title ?? '')))
+const playerLabel = computed(() =>
+  reader.section.value < 0 ? 'Mocca te lee la guía' : `Tema ${reader.section.value + 1} de ${guide.value?.sections.length ?? 0}`,
+)
+// mientras lee, la pantalla sigue el tema que va sonando
+watch(
+  () => reader.section.value,
+  (s) => {
+    if (reader.state.value === 'playing' && s >= 0 && tab.value === 'resumen') goTo(s)
+  },
+)
 const minutes = computed(() => {
   const g = guide.value
   if (!g) return 0
@@ -137,7 +173,20 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
         <p v-if="guide" class="mt-2 text-[14px] font-semibold opacity-70">
           {{ guide.sections.length }} temas · {{ minutes }} min de lectura · {{ read.size }}/{{ guide.sections.length }} leídos
         </p>
-        <div v-if="data.questions" class="mt-5 grid grid-cols-2 gap-2">
+        <button
+          v-if="guide && reader.supported"
+          class="mt-4 flex w-full items-center gap-3 rounded-[20px] bg-white/45 px-4 py-3 text-left"
+          @click="reader.state.value === 'idle' || !showPlayer ? listen() : reader.toggle()"
+        >
+          <span class="grid size-11 shrink-0 place-items-center rounded-full bg-night text-white"><PhHeadphones :size="22" weight="fill" /></span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-display text-[16.5px] font-extrabold leading-tight">
+              {{ reader.state.value === 'playing' ? 'Escuchando…' : reader.index.value > 0 ? 'Seguir escuchando' : 'Escuchar la guía' }}
+            </span>
+            <span class="block text-[13px] font-semibold opacity-70">Mocca te la lee como un audiolibro · ~{{ listenMinutes }} min</span>
+          </span>
+        </button>
+        <div v-if="data.questions" class="mt-3 grid grid-cols-2 gap-2">
           <BaseButton size="md" @click="examen"><PhExam :size="18" weight="bold" /> Examen</BaseButton>
           <BaseButton size="md" variant="surface" @click="tarjetas"><PhCards :size="18" weight="bold" /> Tarjetas</BaseButton>
         </div>
@@ -215,13 +264,26 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
           </ol>
 
           <!-- secciones -->
-          <article v-for="(s, i) in guide.sections" :id="`seccion-${i}`" :key="i" class="mt-8 scroll-mt-20">
+          <article
+            v-for="(s, i) in guide.sections"
+            :id="`seccion-${i}`"
+            :key="i"
+            :class="['mt-8 scroll-mt-20 rounded-[24px] transition-shadow', showPlayer && reader.section.value === i && 'ring-[3px] ring-lilac ring-offset-[10px] ring-offset-bg']"
+          >
             <div class="flex items-start gap-3">
               <span :class="['grid size-9 shrink-0 place-items-center rounded-full font-display text-[16px] font-extrabold', color.solid]">{{ i + 1 }}</span>
-              <div class="min-w-0">
+              <div class="min-w-0 flex-1">
                 <h2 class="font-display text-[22px] font-extrabold leading-tight tracking-[-0.01em]">{{ s.title }}</h2>
                 <p v-if="s.location" class="mt-0.5 text-[12.5px] font-bold text-ink-3">{{ s.location }}</p>
               </div>
+              <button
+                v-if="reader.supported"
+                class="grid size-10 shrink-0 place-items-center rounded-full bg-surface ring-1 ring-line"
+                :aria-label="`Escuchar el tema ${i + 1}`"
+                @click="listen(i)"
+              >
+                <PhSpeakerHigh :size="19" weight="fill" />
+              </button>
             </div>
             <GuideSectionBody class="mt-3" :section="s" :tint="color.tint" />
             <div class="mt-4 flex gap-2">
@@ -282,5 +344,27 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
     </template>
 
     <div v-else-if="!error" class="mt-24 flex justify-center"><MascotBlob mood="thinking" :size="100" /></div>
+
+    <!-- audiolibro -->
+    <AnimatePresence>
+      <GuidePlayer
+        v-if="showPlayer && guide"
+        :playing="reader.state.value === 'playing'"
+        :title="playerTitle"
+        :label="playerLabel"
+        :progress="reader.progress.value"
+        :rate="reader.rate.value"
+        :line="reader.current.value?.text ?? ''"
+        :bar-class="color.bg"
+        :failed="reader.failed.value"
+        @toggle="reader.toggle()"
+        @prev="reader.jump(-1)"
+        @next="reader.jump(1)"
+        @rate="reader.cycleRate()"
+        @close="closePlayer"
+      />
+    </AnimatePresence>
+    <!-- espacio para que la barra no tape lo último -->
+    <div v-if="showPlayer" class="h-44" />
   </main>
 </template>
