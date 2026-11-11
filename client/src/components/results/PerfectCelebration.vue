@@ -40,10 +40,20 @@ const mood = ref<MascotMood>('happy')
 /** fase de la escena, para el polvo del frenazo y el golpe */
 const beat = ref<'run' | 'slip' | 'crash' | 'back' | 'boom'>('run')
 
-function start() {
+/** La escena arranca cuando su música ya está cargada, para que cada sonido caiga en su momento */
+const go = ref(false)
+sound.ready('perfectScene')
+
+async function start() {
   clearTimers()
   if (reduced) return showSummary()
+  go.value = false
   stage.value = 'intro'
+  // máximo 0,8 s de espera: si la red está lenta, la escena sale igual
+  await Promise.race([sound.ready('perfectScene'), new Promise((r) => setTimeout(r, 800))])
+  if (!props.open || stage.value !== 'intro') return
+  go.value = true
+  sound.play('perfectScene')
   act.value = 'run'
   mood.value = 'happy'
   beat.value = 'run'
@@ -52,12 +62,10 @@ function start() {
     act.value = 'slip'
     mood.value = 'surprised'
     beat.value = 'slip'
-    sound.play('tap')
   })
   // ¡pum! contra el borde
   later(1600, () => {
     beat.value = 'crash'
-    sound.play('pop')
     confetti({ particleCount: 16, angle: 180, spread: 70, startVelocity: 30, gravity: 0.9, ticks: 70, origin: { x: 1, y: 0.44 }, shapes: ['star'], colors: ['#ffffff', '#ffcf3f'], scalar: 1.1 })
   })
   // vuelve caminando
@@ -66,8 +74,6 @@ function start() {
     mood.value = 'surprised'
     beat.value = 'back'
   })
-  // el sonido arranca un poco antes: su golpe grave cae justo en la explosión
-  later(BOOM * 1000 - 460, () => sound.play('perfect'))
   later(BOOM * 1000 - 260, () => {
     act.value = 'crouch'
     mood.value = 'surprised'
@@ -90,6 +96,8 @@ function start() {
 function showSummary() {
   if (stage.value === 'summary' && timers.length === 0) return
   clearTimers()
+  // si la saltó tocando, la música de la escena se apaga suave
+  sound.stop('perfectScene')
   stage.value = 'summary'
   ;[0, 1, 2].forEach((i) => later(420 + i * 160, () => sound.play('pop')))
   xpCount.run(props.xp, 900, 450)
@@ -102,6 +110,7 @@ watch(
 )
 onBeforeUnmount(() => {
   clearTimers()
+  sound.stop('perfectScene')
   confetti.reset()
 })
 
@@ -149,7 +158,7 @@ const cards = computed(() => [
       <AnimatePresence mode="wait">
         <!-- ── 1. Entrada ── -->
         <motion.div
-          v-if="stage === 'intro'"
+          v-if="stage === 'intro' && go"
           key="intro"
           class="pc-intro absolute inset-0 overflow-hidden"
           :initial="{ opacity: 0 }"
@@ -254,7 +263,7 @@ const cards = computed(() => [
 
         <!-- ── 2. Resumen ── -->
         <motion.div
-          v-else
+          v-else-if="stage === 'summary'"
           key="summary"
           class="absolute inset-0 flex flex-col items-center overflow-y-auto bg-bg px-5 pb-[max(24px,env(safe-area-inset-bottom))] pt-[8dvh] text-center"
           :initial="{ opacity: 0 }"
