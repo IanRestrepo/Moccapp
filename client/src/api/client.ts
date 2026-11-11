@@ -18,6 +18,7 @@ import type {
   StudyDeckDTO,
   PathDTO,
   StudyGuideDTO,
+  GuideTopicQuizDTO,
   PathLessonDTO,
   PathCompleteResponse,
   PresenceView,
@@ -195,12 +196,13 @@ export const api = {
 
   // Guía de estudio
   guide: (sourceId: string) => request<StudyGuideDTO>('GET', `/guide/${sourceId}`),
+  guideTopic: (sourceId: string, index: number) => request<GuideTopicQuizDTO>('GET', `/guide/${sourceId}/topic/${index}`),
   retryGuide: (sourceId: string) => request<StudyGuideDTO>('POST', `/guide/${sourceId}/retry`),
 
   // Camino
   path: () => request<PathDTO>('GET', '/path'),
   pathLesson: (key: string) => request<PathLessonDTO>('GET', `/path/${encodeURIComponent(key)}`),
-  completeLesson: (key: string, body: { firstTry: number; total: number }) =>
+  completeLesson: (key: string, body: { firstTry: number; total: number; fromGuide?: boolean }) =>
     request<PathCompleteResponse>('POST', `/path/${encodeURIComponent(key)}/complete`, body),
   openChest: (key: string) => request<{ bones: number; xp: number; nextKey: string | null }>('POST', `/path/${encodeURIComponent(key)}/open`),
 

@@ -530,6 +530,19 @@ export interface StudyGuideDTO {
   questions: number
 }
 
+/** Mini examen de un tema de la guía */
+export interface GuideTopicQuizDTO {
+  sourceId: string
+  index: number
+  title: string
+  /** Cuántos temas tiene la guía (para saber si es el último) */
+  topicCount: number
+  /** Llave del nodo del camino de ese tema (al aprobar, también queda hecho en el camino) */
+  pathKey: string
+  color: SourceColor
+  cards: StudyCardDTO[]
+}
+
 // ── Camino (tipo Duolingo) ──────────────────────────────────
 export type PathNodeKind = 'lesson' | 'boss' | 'chest'
 export type PathNodeStatus = 'locked' | 'current' | 'done'
@@ -576,6 +589,8 @@ export const PathCompleteSchema = z.object({
   /** Preguntas acertadas a la primera */
   firstTry: z.number().int().min(0),
   total: z.number().int().min(1),
+  /** Mini examen de un tema desde la guía: cuenta aunque en el camino ese tema siga bloqueado */
+  fromGuide: z.boolean().optional(),
 })
 
 export interface PathCompleteResponse {

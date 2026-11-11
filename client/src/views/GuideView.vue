@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion } from 'motion-v'
 import { PhArrowLeft, PhArrowsClockwise, PhBookOpenText, PhCards, PhCheckCircle, PhCircle, PhExam, PhGraph, PhListChecks } from '@phosphor-icons/vue'
@@ -12,6 +12,7 @@ import { api, ApiRequestError } from '@/api/client'
 import { colorClasses, spring } from '@/lib/motion'
 import { paragraphs, richText } from '@/lib/richText'
 import { useSound } from '@/composables/useSound'
+import { useFullExam } from '@/composables/useGuideProgress'
 
 /**
  * Guía de estudio de una fuente: TODO el tema explicado por secciones (para estudiar de verdad, no solo repasar),
@@ -45,6 +46,12 @@ let waited = false
 onMounted(async () => {
   await load()
   waited = data.value?.status === 'generating'
+  // viene del mini examen anterior: directo al siguiente tema
+  const next = Number(route.query.tema)
+  if (data.value?.status === 'ready' && Number.isInteger(next)) {
+    await nextTick()
+    goTo(next)
+  }
 })
 onBeforeUnmount(() => clearTimeout(timer))
 
@@ -104,6 +111,8 @@ function goTo(i: number) {
   document.getElementById(`seccion-${i}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 }
 const examen = () => router.push({ path: '/configurar', query: { source: id } })
+const fullExam = useFullExam()
+const allDone = computed(() => !!guide.value && read.value.size >= guide.value.sections.length)
 const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } })
 </script>
 
@@ -215,22 +224,33 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
               </div>
             </div>
             <GuideSectionBody class="mt-3" :section="s" :tint="color.tint" />
-            <button
-              :class="[
-                'mt-4 flex w-full items-center justify-center gap-2 rounded-full py-3 text-[14.5px] font-bold transition-colors',
-                read.has(i) ? 'bg-mint-tint text-success' : 'bg-surface ring-1 ring-line',
-              ]"
-              @click="toggleRead(i)"
-            >
-              <component :is="read.has(i) ? PhCheckCircle : PhCircle" :size="20" :weight="read.has(i) ? 'fill' : 'bold'" />
-              {{ read.has(i) ? 'Leído' : 'Marcar como leído' }}
-            </button>
+            <div class="mt-4 flex gap-2">
+              <BaseButton class="flex-1" size="lg" :variant="read.has(i) ? 'surface' : 'night'" @click="router.push(`/guia/${id}/tema/${i}`)">
+                <component :is="read.has(i) ? PhCheckCircle : PhExam" :size="19" :weight="read.has(i) ? 'fill' : 'bold'" :class="read.has(i) && 'text-success'" />
+                {{ read.has(i) ? 'Tema repasado · repetir' : 'Mini examen de este tema' }}
+              </BaseButton>
+              <button
+                v-if="!read.has(i)"
+                class="grid size-[52px] shrink-0 place-items-center rounded-full bg-surface ring-1 ring-line"
+                aria-label="Marcar como leído sin mini examen"
+                title="Marcar como leído"
+                @click="toggleRead(i)"
+              >
+                <PhCircle :size="20" weight="bold" />
+              </button>
+            </div>
           </article>
 
           <div class="mt-10 rounded-card bg-night p-5 text-white">
-            <p class="font-display text-[19px] font-extrabold">¿Ya lo leíste todo?</p>
-            <p class="mt-1 text-[14px] text-white/70">Ahora practica: el camino te pregunta tema por tema.</p>
-            <BaseButton class="mt-4" size="md" @click="router.push('/camino')">Ir al camino</BaseButton>
+            <p class="font-display text-[19px] font-extrabold">{{ allDone ? '¡Repasaste todos los temas!' : 'Examen completo' }}</p>
+            <p class="mt-1 text-[14px] text-white/70">
+              {{ allDone ? 'Ahora mídete con el examen de todo el tema.' : `Llevas ${read.size} de ${guide.sections.length} temas. Al terminar el último mini examen, empieza solo.` }}
+              20 preguntas, 25 minutos.
+            </p>
+            <p v-if="fullExam.error.value" class="mt-2 text-[13.5px] font-bold text-pink">{{ fullExam.error.value }}</p>
+            <BaseButton class="mt-4" size="md" variant="primary" :loading="fullExam.starting.value" @click="fullExam.start(id)">
+              <PhExam :size="18" weight="bold" /> {{ allDone ? 'Empezar examen completo' : 'Hacerlo ya' }}
+            </BaseButton>
           </div>
         </div>
 

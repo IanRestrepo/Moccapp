@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { motion, AnimatePresence } from 'motion-v'
 import confetti from 'canvas-confetti'
-import { PhCheckCircle, PhStar, PhXCircle, PhX } from '@phosphor-icons/vue'
+import { PhCheckCircle, PhExam, PhStar, PhXCircle, PhX } from '@phosphor-icons/vue'
 import type { PathCompleteResponse, PathLessonDTO, StudyCardDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
@@ -13,6 +13,7 @@ import GuideSectionBody from '@/components/guide/GuideSectionBody.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { useSound } from '@/composables/useSound'
 import { useStatsStore } from '@/stores/stats'
+import { loadRead, saveRead, useFullExam } from '@/composables/useGuideProgress'
 import { colorClasses, spring } from '@/lib/motion'
 
 /**
@@ -23,7 +24,16 @@ const route = useRoute()
 const router = useRouter()
 const stats = useStatsStore()
 const { play } = useSound()
-const key = String(route.params.key)
+/** Mini examen de un tema de la guía (/guia/:id/tema/:i): sin lectura previa (ya la leyó) */
+const topic = route.params.i !== undefined ? { sourceId: String(route.params.id), index: Number(route.params.i) } : null
+let key = String(route.params.key ?? '')
+const topicCount = ref(0)
+const allTopicsDone = ref(false)
+const nextTopic = ref<number | null>(null)
+const fullExam = useFullExam()
+/** Cuenta regresiva para el examen completo (al terminar el último tema) */
+const countdown = ref(0)
+let countdownTimer = 0
 
 interface Item {
   card: StudyCardDTO
@@ -87,7 +97,14 @@ const toItem = (card: StudyCardDTO, retry = false): Item => ({
 
 onMounted(async () => {
   try {
-    lesson.value = await api.pathLesson(key)
+    if (topic) {
+      const q = await api.guideTopic(topic.sourceId, topic.index)
+      key = q.pathKey
+      topicCount.value = q.topicCount
+      lesson.value = { key, label: q.title, unitTitle: '', color: q.color, kind: 'lesson', cards: q.cards, section: null }
+      phase.value = 'practice'
+      if (!q.cards.length) return void finish()
+    } else lesson.value = await api.pathLesson(key)
     queue.value = shuffled(lesson.value.cards.length).map((i) => toItem(lesson.value!.cards[i]!))
   } catch (err) {
     error.value = err instanceof ApiRequestError ? err.message : 'No pude cargar la lección.'
@@ -156,7 +173,11 @@ async function finish() {
   saving.value = true
   try {
     const read = total.value === 0
-    result.value = await api.completeLesson(key, read ? { firstTry: 1, total: 1 } : { firstTry: firstTry.value, total: total.value })
+    result.value = await api.completeLesson(key, {
+      ...(read ? { firstTry: 1, total: 1 } : { firstTry: firstTry.value, total: total.value }),
+      fromGuide: !!topic,
+    })
+    if (topic) afterTopic()
     play(result.value.stars === 3 ? 'perfect' : 'finish')
     if (result.value.stars === 3) confetti({ particleCount: 110, spread: 80, origin: { y: 0.5 }, colors: ['#f2b31f', '#8d6ce6', '#ee5fa8', '#35b673'] })
     stats.refresh().catch(() => {})
@@ -167,9 +188,34 @@ async function finish() {
   }
 }
 
+/** Tema aprobado: queda marcado en la guía; si era el último, arranca solo el examen completo */
+function afterTopic() {
+  const done = loadRead(topic!.sourceId)
+  done.add(topic!.index)
+  saveRead(topic!.sourceId, done)
+  const pending = [...Array(topicCount.value).keys()].filter((i) => !done.has(i))
+  nextTopic.value = pending.find((i) => i > topic!.index) ?? pending[0] ?? null
+  allTopicsDone.value = pending.length === 0
+  if (allTopicsDone.value) {
+    countdown.value = 6
+    countdownTimer = window.setInterval(() => {
+      if (--countdown.value <= 0) {
+        clearInterval(countdownTimer)
+        fullExam.start(topic!.sourceId)
+      }
+    }, 1000)
+  }
+}
+function cancelCountdown() {
+  clearInterval(countdownTimer)
+  countdown.value = 0
+}
+onBeforeUnmount(() => clearInterval(countdownTimer))
+const backTo = () => (topic ? `/guia/${topic.sourceId}` : '/camino')
+
 function exit() {
   if (!result.value && correctCount.value > 0 && !confirm('¿Salir de la lección? Perderás el avance de esta lección.')) return
-  router.push('/camino')
+  router.push(backTo())
 }
 </script>
 
@@ -192,13 +238,15 @@ function exit() {
 
     <p v-if="error" class="mt-6 rounded-[18px] bg-pink-tint px-4 py-3 text-[14px] font-semibold">
       {{ error }}
-      <button class="mt-2 block font-bold underline" @click="router.push('/camino')">Volver al camino</button>
+      <button class="mt-2 block font-bold underline" @click="router.push(backTo())">{{ topic ? 'Volver a la guía' : 'Volver al camino' }}</button>
     </p>
 
     <!-- Resultado -->
     <section v-else-if="result" class="flex flex-1 flex-col items-center justify-center pb-10 text-center">
       <MascotBlob :mood="result.stars === 3 ? 'amazed' : 'celebrating'" :size="150" />
-      <h1 class="mt-4 text-title font-extrabold">{{ result.stars === 3 ? '¡Perfecta!' : '¡Lección completa!' }}</h1>
+      <h1 class="mt-4 text-title font-extrabold">
+        {{ topic ? (allTopicsDone ? '¡Terminaste todos los temas!' : '¡Tema repasado!') : result.stars === 3 ? '¡Perfecta!' : '¡Lección completa!' }}
+      </h1>
       <div class="mt-4 flex gap-2">
         <motion.span
           v-for="s in 3"
@@ -216,7 +264,29 @@ function exit() {
         <span v-if="result.bones" class="rounded-[18px] bg-lilac px-4 py-3 text-on-color"><b class="font-display text-[22px]">+{{ result.bones }}</b> huesitos</span>
         <span v-if="result.streak.extendedToday" class="rounded-[18px] bg-orange px-4 py-3 text-on-color"><b class="font-display text-[22px]">{{ result.streak.current }}</b> días</span>
       </div>
-      <BaseButton class="mt-10" size="xl" block @click="router.push('/camino')">Continuar</BaseButton>
+      <!-- mini examen de la guía: siguiente tema, o el examen completo -->
+      <template v-if="topic">
+        <div v-if="allTopicsDone" class="mt-8 w-full rounded-card bg-night p-5 text-left text-white">
+          <p class="flex items-center gap-2 font-display text-[19px] font-extrabold"><PhExam :size="22" weight="fill" /> Ahora, el examen completo</p>
+          <p class="mt-1 text-[14px] text-white/70">20 preguntas de todo el tema, 25 minutos. Como un parcial de verdad.</p>
+          <p v-if="fullExam.error.value" class="mt-2 text-[13.5px] font-bold text-pink">{{ fullExam.error.value }}</p>
+          <BaseButton class="mt-4" size="lg" variant="primary" block :loading="fullExam.starting.value" @click="cancelCountdown(); fullExam.start(topic.sourceId)">
+            {{ countdown > 0 ? `Empieza en ${countdown}…` : 'Empezar el examen' }}
+          </BaseButton>
+          <button v-if="countdown > 0" class="mt-3 w-full text-[14px] font-bold text-white/70" @click="cancelCountdown">Ahora no</button>
+        </div>
+        <BaseButton
+          v-else-if="nextTopic !== null"
+          class="mt-10"
+          size="xl"
+          block
+          @click="router.push({ path: `/guia/${topic.sourceId}`, query: { tema: nextTopic } })"
+        >
+          Siguiente tema
+        </BaseButton>
+        <button class="mt-4 text-[14.5px] font-bold text-ink-2" @click="cancelCountdown(); router.push(`/guia/${topic.sourceId}`)">Volver a la guía</button>
+      </template>
+      <BaseButton v-else class="mt-10" size="xl" block @click="router.push('/camino')">Continuar</BaseButton>
     </section>
 
     <!-- Aprende: la sección completa de la guía -->

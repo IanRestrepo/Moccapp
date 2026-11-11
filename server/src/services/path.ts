@@ -6,6 +6,7 @@ import { and, asc, eq, inArray } from 'drizzle-orm'
 import type {
   Difficulty,
   GuideSection,
+  GuideTopicQuizDTO,
   GuideStatus,
   PathDTO,
   PathLessonDTO,
@@ -240,12 +241,12 @@ export async function getPath(): Promise<PathDTO> {
   return { units: dtoUnits, currentKey, done: flat.filter((f) => f.dto.status === 'done').length, total: flat.length }
 }
 
-async function findNode(key: string) {
+async function findNode(key: string, ignoreLock = false) {
   const units = await buildUnits()
   const { flat } = withStatus(units, await progressMap())
   const i = flat.findIndex((f) => f.node.key === key)
   if (i === -1) throw Errors.notFound('Esa lección')
-  if (flat[i]!.dto.status === 'locked') throw new AppError(403, 'LOCKED', 'Esa lección todavía está bloqueada. Termina las anteriores.')
+  if (flat[i]!.dto.status === 'locked' && !ignoreLock) throw new AppError(403, 'LOCKED', 'Esa lección todavía está bloqueada. Termina las anteriores.')
   const unit = units.find((u) => u.nodes.some((n) => n.key === key))!
   const next = flat.slice(i + 1).find((f) => f.unitId === unit.sourceId && f.dto.status !== 'done')?.node.key ?? null
   return { ...flat[i]!, unit, next }
@@ -275,8 +276,9 @@ export const starsFor = (firstTry: number, total: number) => {
   return r >= 0.9 ? 3 : r >= 0.7 ? 2 : 1
 }
 
-export async function completeLesson(key: string, firstTry: number, total: number) {
-  const { node, next } = await findNode(key)
+export async function completeLesson(key: string, firstTry: number, total: number, fromGuide = false) {
+  // desde la guía puede hacer los temas en cualquier orden
+  const { node, next } = await findNode(key, fromGuide && !!key.match(/:s\d+$/))
   if (node.kind === 'chest') throw new AppError(400, 'IS_CHEST', 'Eso es un cofre.')
   const stars = starsFor(Math.min(firstTry, total), total)
   const mine = and(eq(pathProgress.profile, currentProfile()), eq(pathProgress.nodeKey, key))
@@ -302,4 +304,21 @@ export async function openChest(key: string) {
   await db.insert(pathProgress).values({ profile: currentProfile(), nodeKey: key, stars: 3 })
   const r = await recordActivity({ xp: isOwner() ? 20 : 50, bones: CHEST_BONES })
   return { bones: r.bones, xp: r.xp, nextKey: next }
+}
+
+/** Mini examen de un tema de la guía: las mismas preguntas de la lección de esa sección en el camino */
+export async function guideTopicQuiz(sourceId: string, index: number): Promise<GuideTopicQuizDTO> {
+  const units = await buildUnits()
+  const unit = units.find((u) => u.sourceId === sourceId)
+  const node = unit?.nodes.find((n) => n.key === `${sourceId}:s${index}`)
+  if (!unit || !node?.section) throw Errors.notFound('Ese tema')
+  return {
+    sourceId,
+    index,
+    title: node.section.title,
+    topicCount: unit.nodes.filter((n) => n.section).length,
+    pathKey: node.key,
+    color: unit.color,
+    cards: node.questions,
+  }
 }

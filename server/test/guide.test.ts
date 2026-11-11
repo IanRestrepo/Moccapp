@@ -248,3 +248,30 @@ test('búsqueda de imágenes cada vez más general', async () => {
   ])
   assert.deepEqual(broader('rumen'), ['rumen'])
 })
+
+test('mini examen de un tema: trae las preguntas de ese tema y, desde la guía, se puede hacer en cualquier orden', async () => {
+  guideMode = 'ok'
+  const id = await newSource('Tercer tema de prueba con suficiente texto para estudiar. '.repeat(10))
+  await api('GET', `/guide/${id}`)
+  await until(
+    () => api<StudyGuideDTO>('GET', `/guide/${id}`),
+    (r) => r.body.status === 'ready',
+  )
+  const quiz = await api<{ title: string; topicCount: number; pathKey: string; cards: { topic: string; id: string }[] }>('GET', `/guide/${id}/topic/2`)
+  assert.equal(quiz.status, 200)
+  assert.equal(quiz.body.title, 'Sección 3: Intestino delgado')
+  assert.equal(quiz.body.topicCount, 3)
+  assert.equal(quiz.body.pathKey, `${id}:s2`)
+  assert.ok(quiz.body.cards.length > 0)
+  assert.ok(quiz.body.cards.filter((c) => !c.id.includes(':t')).every((c) => c.topic === 'Intestino delgado'))
+  assert.equal((await api('GET', `/guide/${id}/topic/9`)).status, 404)
+
+  // en el camino el tema 3 sigue bloqueado; desde la guía sí cuenta
+  const body = { firstTry: 3, total: 3 }
+  assert.equal((await api('POST', `/path/${id}:s2/complete`, body)).status, 403)
+  const ok = await api<{ stars: number }>('POST', `/path/${id}:s2/complete`, { ...body, fromGuide: true })
+  assert.equal(ok.status, 200)
+  assert.equal(ok.body.stars, 3)
+  const unit = (await api<PathDTO>('GET', '/path')).body.units.find((u) => u.sourceId === id)!
+  assert.equal(unit.nodes[2]!.status, 'done')
+})
