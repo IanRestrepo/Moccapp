@@ -12,8 +12,15 @@ import { computed } from 'vue'
  * amazed (examen perfecto, entrada: ojos blancos que brillan, pose de poder) · proud (examen perfecto, resumen: gafas de sol y medalla de oro)
  */
 export type MascotMood = 'happy' | 'thinking' | 'surprised' | 'celebrating' | 'sad' | 'amazed' | 'proud'
+/**
+ * Acciones de cuerpo entero (para escenas, como la del examen perfecto). Deforman el dibujo completo como en los
+ * dibujos animados: se inclina al correr, se estira al saltar y se aplasta al caer.
+ * run (corre hacia la derecha) · slip (frena, se resbala y se va de espaldas) · waddle (camina de vuelta)
+ * crouch (se agacha para tomar impulso) · jump (salta de emoción)
+ */
+export type MascotAct = 'run' | 'slip' | 'waddle' | 'crouch' | 'jump'
 
-const props = withDefaults(defineProps<{ mood?: MascotMood; size?: number; label?: string }>(), { mood: 'happy', size: 160 })
+const props = withDefaults(defineProps<{ mood?: MascotMood; size?: number; label?: string; act?: MascotAct }>(), { mood: 'happy', size: 160 })
 
 const LINE = '#2A1810' // contorno café oscuro
 const COAT = '#5A4036' // chocolate
@@ -46,7 +53,7 @@ const arms = computed<[number, number]>(
 </script>
 
 <template>
-  <svg :width="size" :height="size * 1.08" viewBox="0 0 240 260" role="img" :aria-label="label ?? 'Mocca'" :class="['mocca overflow-visible', `mocca--${mood}`]">
+  <svg :width="size" :height="size * 1.08" viewBox="0 0 240 260" role="img" :aria-label="label ?? 'Mocca'" :class="['mocca overflow-visible', `mocca--${mood}`, act && `mocca--act-${act}`]">
     <ellipse cx="120" cy="248" rx="62" ry="8" :fill="LINE" opacity="0.14" class="mocca-shadow" />
 
     <!-- destellos de fiesta / orgullo -->
@@ -78,10 +85,13 @@ const arms = computed<[number, number]>(
       <!-- cuerpo sentado -->
       <g class="mocca-body">
         <!-- patas -->
-        <g :stroke="LINE" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+        <g class="mocca-foot mocca-foot--l" :stroke="LINE" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
           <path d="M72 240c0-9 9-15 21-15s21 6 21 15c0 6-9 9-21 9s-21-3-21-9z" :fill="TAN" />
+          <path d="M86 240v6M99 240v6" fill="none" stroke-width="3" />
+        </g>
+        <g class="mocca-foot mocca-foot--r" :stroke="LINE" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
           <path d="M126 240c0-9 9-15 21-15s21 6 21 15c0 6-9 9-21 9s-21-3-21-9z" :fill="TAN" />
-          <path d="M86 240v6M99 240v6M141 240v6M154 240v6" fill="none" stroke-width="3" />
+          <path d="M141 240v6M154 240v6" fill="none" stroke-width="3" />
         </g>
         <path
           d="M120 148c30 0 52 22 55 54 2 26-16 42-55 42s-57-16-55-42c3-32 25-54 55-54z"
@@ -478,6 +488,414 @@ const arms = computed<[number, number]>(
 }
 .mocca--proud .mocca-tail {
   animation-duration: 0.900s;
+}
+
+/* ═══ Acciones de cuerpo entero: mandan sobre las animaciones del ánimo ═══ */
+.mocca-foot--l {
+  transform-origin: 93px 238px;
+}
+.mocca-foot--r {
+  transform-origin: 147px 238px;
+}
+
+/* ── correr (hacia la derecha): inclinada, rebota aplastándose, orejas y cola hacia atrás, patas revueltas ── */
+.mocca.mocca--act-run .mocca-all {
+  animation: run-body 0.220s linear infinite;
+}
+.mocca.mocca--act-run .mocca-body,
+.mocca.mocca--act-run .mocca-collar {
+  animation: none;
+}
+.mocca.mocca--act-run .mocca-head {
+  animation: run-head 0.220s linear infinite;
+}
+.mocca.mocca--act-run .mocca-ear--l {
+  animation: run-ear-l 0.220s ease-in-out infinite;
+}
+.mocca.mocca--act-run .mocca-ear--r {
+  animation: run-ear-r 0.220s ease-in-out infinite;
+}
+.mocca.mocca--act-run .mocca-tail {
+  animation: run-tail 0.220s ease-in-out infinite;
+}
+.mocca.mocca--act-run .mocca-foot--l {
+  animation: run-foot 0.220s linear infinite;
+}
+.mocca.mocca--act-run .mocca-foot--r {
+  animation: run-foot 0.220s linear infinite -0.110s;
+}
+.mocca.mocca--act-run .mocca-arm--l {
+  animation: run-arm-l 0.220s ease-in-out infinite;
+}
+.mocca.mocca--act-run .mocca-arm--r {
+  animation: run-arm-r 0.220s ease-in-out infinite;
+}
+.mocca.mocca--act-run .mocca-shadow {
+  animation: run-shadow 0.220s linear infinite;
+  transform-origin: 120px 248px;
+}
+
+/* ── resbalón: frena echada hacia atrás, las patas se le van adelante y termina de espaldas ── */
+.mocca.mocca--act-slip .mocca-all {
+  animation: slip-body 0.900s cubic-bezier(0.3, 0.6, 0.4, 1) both;
+}
+.mocca.mocca--act-slip .mocca-body,
+.mocca.mocca--act-slip .mocca-head,
+.mocca.mocca--act-slip .mocca-collar {
+  animation: none;
+}
+.mocca.mocca--act-slip .mocca-ear--l,
+.mocca.mocca--act-slip .mocca-ear--r {
+  animation: slip-ear 0.900s ease-out both;
+}
+.mocca.mocca--act-slip .mocca-foot--l {
+  animation: slip-foot 0.160s linear infinite;
+}
+.mocca.mocca--act-slip .mocca-foot--r {
+  animation: slip-foot 0.160s linear infinite -0.080s;
+}
+.mocca.mocca--act-slip .mocca-arm--l {
+  animation: flail-l 0.180s linear infinite;
+}
+.mocca.mocca--act-slip .mocca-arm--r {
+  animation: flail-r 0.180s linear infinite;
+}
+.mocca.mocca--act-slip .mocca-tail {
+  animation: none;
+  transform: rotate(-50deg) scale(1.150, 0.900);
+}
+
+/* ── caminar de vuelta: se balancea de un lado a otro, medio apenada ── */
+.mocca.mocca--act-waddle .mocca-all {
+  animation: waddle 0.360s ease-in-out infinite;
+}
+.mocca.mocca--act-waddle .mocca-foot--l {
+  animation: step 0.360s ease-in-out infinite;
+}
+.mocca.mocca--act-waddle .mocca-foot--r {
+  animation: step 0.360s ease-in-out infinite -0.180s;
+}
+.mocca.mocca--act-waddle .mocca-ear--l {
+  animation: none;
+  transform: rotate(-20deg) skewX(8deg);
+}
+.mocca.mocca--act-waddle .mocca-ear--r {
+  animation: none;
+  transform: rotate(20deg) skewX(-8deg);
+}
+.mocca.mocca--act-waddle .mocca-tail {
+  animation: wag 0.900s ease-in-out infinite alternate;
+}
+
+/* ── agacharse: se aplasta para tomar impulso ── */
+.mocca.mocca--act-crouch .mocca-all {
+  animation: crouch 0.260s cubic-bezier(0.3, 0, 0.2, 1) both;
+}
+.mocca.mocca--act-crouch .mocca-ear--l {
+  animation: none;
+  transform: rotate(-26deg);
+  transition: transform 0.200s;
+}
+.mocca.mocca--act-crouch .mocca-ear--r {
+  animation: none;
+  transform: rotate(26deg);
+  transition: transform 0.200s;
+}
+
+/* ── saltar de emoción: estirón al subir, aplastón al caer, orejas y brazos con rebote ── */
+.mocca.mocca--act-jump .mocca-all {
+  animation: jump 0.640s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+.mocca.mocca--act-jump .mocca-shadow {
+  animation: jump-shadow 0.640s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+  transform-origin: 120px 248px;
+}
+.mocca.mocca--act-jump .mocca-body,
+.mocca.mocca--act-jump .mocca-collar {
+  animation: none;
+}
+.mocca.mocca--act-jump .mocca-head {
+  animation: jump-head 0.640s cubic-bezier(0.3, 0, 0.3, 1) infinite;
+}
+.mocca.mocca--act-jump .mocca-ear--l {
+  animation: jump-ear-l 0.640s ease-in-out infinite;
+}
+.mocca.mocca--act-jump .mocca-ear--r {
+  animation: jump-ear-r 0.640s ease-in-out infinite;
+}
+.mocca.mocca--act-jump .mocca-foot--l {
+  animation: jump-foot-l 0.640s ease-in-out infinite;
+}
+.mocca.mocca--act-jump .mocca-foot--r {
+  animation: jump-foot-r 0.640s ease-in-out infinite;
+}
+.mocca.mocca--act-jump .mocca-tail {
+  animation: wag 0.160s ease-in-out infinite alternate;
+}
+
+@keyframes run-body {
+  0%,
+  100% {
+    transform: skewX(-17deg) translateY(0) scale(1.080, 0.900);
+  }
+  50% {
+    transform: skewX(-21deg) translateY(-13px) scale(0.960, 1.060);
+  }
+}
+@keyframes run-head {
+  0%,
+  100% {
+    transform: translate(8px, 4px) rotate(7deg);
+  }
+  50% {
+    transform: translate(10px, -3px) rotate(4deg);
+  }
+}
+@keyframes run-ear-l {
+  0%,
+  100% {
+    transform: rotate(-34deg) skewX(16deg) scaleY(0.940);
+  }
+  50% {
+    transform: rotate(-44deg) skewX(22deg) scaleY(1.060);
+  }
+}
+@keyframes run-ear-r {
+  0%,
+  100% {
+    transform: rotate(-22deg) skewX(16deg) scaleY(0.940);
+  }
+  50% {
+    transform: rotate(-32deg) skewX(22deg) scaleY(1.060);
+  }
+}
+@keyframes run-tail {
+  0%,
+  100% {
+    transform: rotate(-78deg) scale(1.250, 0.850);
+  }
+  50% {
+    transform: rotate(-64deg) scale(1.150, 0.900);
+  }
+}
+@keyframes run-foot {
+  0% {
+    transform: translate(26px, -4px) rotate(-30deg);
+  }
+  25% {
+    transform: translate(0, 2px) rotate(0) scaleX(1.150);
+  }
+  50% {
+    transform: translate(-30px, -6px) rotate(38deg);
+  }
+  75% {
+    transform: translate(-6px, -24px) rotate(10deg) scaleX(0.900);
+  }
+  100% {
+    transform: translate(26px, -4px) rotate(-30deg);
+  }
+}
+@keyframes run-arm-l {
+  0%,
+  100% {
+    transform: rotate(74deg);
+  }
+  50% {
+    transform: rotate(-44deg);
+  }
+}
+@keyframes run-arm-r {
+  0%,
+  100% {
+    transform: rotate(40deg);
+  }
+  50% {
+    transform: rotate(-72deg);
+  }
+}
+@keyframes run-shadow {
+  50% {
+    transform: scaleX(0.800);
+    opacity: 0.080;
+  }
+}
+@keyframes slip-body {
+  0% {
+    transform: skewX(-17deg) scale(1.080, 0.900);
+  }
+  14% {
+    transform: skewX(24deg) rotate(8deg) scale(0.900, 1.100);
+  }
+  45% {
+    transform: skewX(18deg) rotate(28deg) scale(1.040, 0.960) translateY(4px);
+  }
+  100% {
+    transform: skewX(6deg) rotate(84deg) scale(1.100, 0.900) translate(10px, 30px);
+  }
+}
+@keyframes slip-ear {
+  0% {
+    transform: rotate(-36deg) skewX(18deg);
+  }
+  20% {
+    transform: rotate(26deg) skewX(-16deg);
+  }
+  100% {
+    transform: rotate(14deg) skewX(-8deg);
+  }
+}
+@keyframes slip-foot {
+  0%,
+  100% {
+    transform: translate(22px, -10px) rotate(-36deg);
+  }
+  50% {
+    transform: translate(6px, -22px) rotate(-12deg);
+  }
+}
+@keyframes flail-l {
+  0%,
+  100% {
+    transform: rotate(150deg);
+  }
+  50% {
+    transform: rotate(70deg);
+  }
+}
+@keyframes flail-r {
+  0%,
+  100% {
+    transform: rotate(-70deg);
+  }
+  50% {
+    transform: rotate(-150deg);
+  }
+}
+@keyframes waddle {
+  0%,
+  100% {
+    transform: rotate(-7deg) skewX(5deg) scale(1.030, 0.970);
+  }
+  25% {
+    transform: rotate(0) translateY(-5px) scale(0.980, 1.030);
+  }
+  50% {
+    transform: rotate(7deg) skewX(-1deg) scale(1.030, 0.970);
+  }
+  75% {
+    transform: rotate(0) translateY(-5px) scale(0.980, 1.030);
+  }
+}
+@keyframes step {
+  0%,
+  100% {
+    transform: translate(0, 0);
+  }
+  50% {
+    transform: translate(-8px, -10px) rotate(12deg);
+  }
+}
+@keyframes crouch {
+  to {
+    transform: scale(1.220, 0.740);
+  }
+}
+@keyframes jump {
+  0% {
+    transform: translateY(0) scale(1.240, 0.740);
+  }
+  18% {
+    transform: translateY(-18px) scale(0.820, 1.260);
+  }
+  45% {
+    transform: translateY(-74px) scale(0.960, 1.060) rotate(-4deg);
+  }
+  55% {
+    transform: translateY(-76px) scale(1.020, 0.990) rotate(3deg);
+  }
+  82% {
+    transform: translateY(-12px) scale(0.860, 1.200);
+  }
+  92% {
+    transform: translateY(0) scale(1.280, 0.720);
+  }
+  100% {
+    transform: translateY(0) scale(1.240, 0.740);
+  }
+}
+@keyframes jump-shadow {
+  0%,
+  100% {
+    transform: scaleX(1.200);
+    opacity: 0.180;
+  }
+  50% {
+    transform: scaleX(0.550);
+    opacity: 0.060;
+  }
+}
+@keyframes jump-head {
+  0%,
+  100% {
+    transform: translateY(9px);
+  }
+  20% {
+    transform: translateY(-5px);
+  }
+  50% {
+    transform: translateY(-3px) rotate(-3deg);
+  }
+  85% {
+    transform: translateY(-7px);
+  }
+}
+@keyframes jump-ear-l {
+  0%,
+  100% {
+    transform: rotate(-24deg);
+  }
+  25% {
+    transform: rotate(20deg) scaleY(1.120);
+  }
+  55% {
+    transform: rotate(-6deg);
+  }
+  85% {
+    transform: rotate(14deg) scaleY(1.100);
+  }
+}
+@keyframes jump-ear-r {
+  0%,
+  100% {
+    transform: rotate(24deg);
+  }
+  25% {
+    transform: rotate(-20deg) scaleY(1.120);
+  }
+  55% {
+    transform: rotate(6deg);
+  }
+  85% {
+    transform: rotate(-14deg) scaleY(1.100);
+  }
+}
+@keyframes jump-foot-l {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translate(-12px, 10px) rotate(24deg);
+  }
+}
+@keyframes jump-foot-r {
+  0%,
+  100% {
+    transform: none;
+  }
+  45% {
+    transform: translate(12px, 10px) rotate(-24deg);
+  }
 }
 
 @keyframes breathe {
