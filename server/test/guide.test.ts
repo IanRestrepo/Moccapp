@@ -275,3 +275,28 @@ test('mini examen de un tema: trae las preguntas de ese tema y, desde la guía, 
   const unit = (await api<PathDTO>('GET', '/path')).body.units.find((u) => u.sourceId === id)!
   assert.equal(unit.nodes[2]!.status, 'done')
 })
+
+test('la logística del curso (metodología, evaluación, talleres) no sale en la guía ni en el mapa', async () => {
+  const { withoutLogistics } = await import('../src/services/guide.js')
+  const base = toGuide({ insufficientContent: false, overview: '', sections: [0, 1].map(section), conceptMap: { center: 'Geopolítica', branches: [] }, checklist: [] })
+  const g = withoutLogistics({
+    ...base,
+    sections: [...base.sections, { ...base.sections[0]!, title: 'Metodología y Clases' }, { ...base.sections[0]!, title: 'Evaluación clínica del paciente' }],
+    conceptMap: {
+      center: 'Geopolítica',
+      branches: [
+        { label: 'Metodología y Clases', children: [{ label: 'Talleres' }] },
+        { label: 'Evaluación', children: [{ label: 'Exámenes' }] },
+        { label: 'Teorías geopolíticas', children: [{ label: 'Heartland', detail: 'Mackinder' }, { label: 'Examen escrito 1', detail: 'vale el 30% en semana 7' }] },
+      ],
+    },
+    checklist: ['Explicar la teoría del Heartland', 'Examen escrito 2: vale el 10% en semana 16'],
+  })
+  assert.deepEqual(g.sections.map((s) => s.title), [base.sections[0]!.title, base.sections[1]!.title, 'Evaluación clínica del paciente'])
+  assert.deepEqual(g.conceptMap.branches.map((b) => b.label), ['Teorías geopolíticas'])
+  assert.deepEqual(g.conceptMap.branches[0]!.children!.map((c) => c.label), ['Heartland'])
+  assert.deepEqual(g.checklist, ['Explicar la teoría del Heartland'])
+  // si TODO es logística (la fuente es el programa del curso) no se deja vacía
+  const only = withoutLogistics({ ...base, sections: [{ ...base.sections[0]!, title: 'Evaluación' }] })
+  assert.equal(only.sections.length, 1)
+})

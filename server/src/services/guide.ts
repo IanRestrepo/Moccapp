@@ -26,6 +26,46 @@ const leaf = (n: { label: string; detail: string; children?: unknown[] }): Conce
   ...(n.detail.trim() ? { detail: n.detail.trim() } : {}),
 })
 
+/** Logística del curso (cómo se dicta y se califica): no es tema de estudio y no debe salir en guías ni mapas */
+const LOGISTIC_WORD = '(metodolog[ií]a|evaluaci[oó]n|calificaci[oó]n|cronograma|bibliograf[ií]a|talleres|ex[aá]menes|trabajos|actividades|estrategias|clases|notas)'
+const COURSE_LOGISTICS = new RegExp(
+  [
+    // palabras genéricas solas o combinadas entre sí ("Metodología y Clases"); "Estrategias de inmunización" sí es tema
+    `^\\s*${LOGISTIC_WORD}(\\s+(y|e)\\s+${LOGISTIC_WORD})*\\s*$`,
+    'clases? magistral',
+    'seminario alem[aá]n',
+    'porcentaje de (la )?nota',
+    'sistema de evaluaci[oó]n',
+    'organizaci[oó]n acad[eé]mica',
+    '(del|de la) (curso|asignatura)(\\s|$)',
+    'datos del docente',
+    'cronograma',
+    'syllabus',
+    'examen (escrito|parcial|final) \\d',
+    'vale el \\d+ ?%',
+    '^\\s*(taller|quiz|parcial) \\d',
+  ].join('|'),
+  'i',
+)
+const isCourseLogistics = (s: string) => COURSE_LOGISTICS.test(s)
+
+/**
+ * Quita de una guía lo que sea logística del curso (también de las ya guardadas). Si al quitarlo no queda nada
+ * (la fuente entera es el programa del curso), se deja como estaba.
+ */
+export function withoutLogistics(g: StudyGuide): StudyGuide {
+  const sections = g.sections.filter((s) => !isCourseLogistics(s.title))
+  const branches = g.conceptMap.branches
+    .filter((b) => !isCourseLogistics(b.label))
+    .map((b) => ({ ...b, children: b.children?.filter((c) => !isCourseLogistics(c.label) && !isCourseLogistics(c.detail ?? '')) }))
+  return {
+    ...g,
+    sections: sections.length ? sections : g.sections,
+    conceptMap: { ...g.conceptMap, branches: branches.length ? branches : g.conceptMap.branches },
+    checklist: g.checklist.filter((c) => !isCourseLogistics(c)),
+  }
+}
+
 /** Búsquedas de imágenes de cada sección que quedó en la guía (mismo orden que guide.sections) */
 export const imageQueries = (r: GuideResponse) =>
   r.sections.filter((s) => s.title.trim() && s.summary.trim()).map((s) => ({ images: s.images.filter((i) => i.query.trim()) }))
@@ -135,7 +175,7 @@ export async function ensureGuide(sourceId: string, retry = false): Promise<void
 export async function guidesFor(sourceIds: string[]): Promise<Map<string, StudyGuideRow>> {
   if (!sourceIds.length) return new Map()
   const rows = await db.select().from(studyGuides).where(inArray(studyGuides.sourceId, sourceIds))
-  return new Map(rows.map((r) => [r.sourceId, r]))
+  return new Map(rows.map((r) => [r.sourceId, { ...r, data: r.data && withoutLogistics(r.data) }]))
 }
 
 export const guideStatus = (row: StudyGuideRow | undefined): StudyGuideDTO['status'] =>
@@ -153,7 +193,7 @@ export async function getGuide(sourceId: string, start = true): Promise<StudyGui
     title: source.title,
     color: source.color,
     status,
-    guide: status === 'ready' ? (row!.data ?? null) : null,
+    guide: status === 'ready' && row!.data ? withoutLogistics(row!.data) : null,
     error: status === 'error' ? (row?.errorMessage ?? 'La guía se demoró demasiado. Intenta de nuevo.') : null,
     questions: n,
   }

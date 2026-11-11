@@ -174,6 +174,9 @@ REGLAS OBLIGATORIAS:
 2. COBERTURA TOTAL: recorre la fuente de principio a fin, en su mismo orden, sin saltarte temas. Cada tema o bloque de la
    fuente debe quedar en alguna sección. Ignora solo la logística del curso (cronograma, correo del profesor, normas,
    forma de evaluación) y los metadatos (portada, logos).
+   PROHIBIDO en TODA la guía (secciones, mapa conceptual, términos, tablas y checklist): cómo se dicta o se califica
+   el curso — metodología, clases magistrales, seminarios, talleres, trabajos, exámenes y sus porcentajes o semanas,
+   fechas de entrega, bibliografía, datos del docente. Eso no se estudia. La guía y el mapa enseñan el TEMA académico.
 3. Usa ÚNICAMENTE la información de la fuente. No agregues datos de tu conocimiento general. Copia EXACTOS los datos
    precisos: dosis, valores, nombres científicos, fármacos, vías, cifras, fechas, autores, países, tratados.
 4. Secciones ("sections"): entre 4 y 14, cada una un tema con sentido propio (no una por diapositiva). Para cada una:
