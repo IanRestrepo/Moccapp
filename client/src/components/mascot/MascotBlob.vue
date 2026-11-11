@@ -9,7 +9,7 @@ import { computed } from 'vue'
  */
 /**
  * happy (inicio) · thinking (generando) · surprised (poco tiempo) · celebrating (nota ≥ 3.0) · sad (nota baja)
- * amazed (examen perfecto, entrada) · proud (examen perfecto, resumen: gafas de sol y medalla de oro)
+ * amazed (examen perfecto, entrada: ojos blancos que brillan, pose de poder) · proud (examen perfecto, resumen: gafas de sol y medalla de oro)
  */
 export type MascotMood = 'happy' | 'thinking' | 'surprised' | 'celebrating' | 'sad' | 'amazed' | 'proud'
 
@@ -38,7 +38,7 @@ const arms = computed<[number, number]>(
         surprised: [52, -52],
         celebrating: [128, -128],
         sad: [2, -2],
-        amazed: [96, -96],
+        amazed: [138, -138],
         proud: [34, -34],
       } as Record<MascotMood, [number, number]>
     )[m.value],
@@ -169,14 +169,25 @@ const arms = computed<[number, number]>(
           <g v-if="mood === 'celebrating'" fill="none" :stroke="LINE" stroke-width="5.500" stroke-linecap="round">
             <path d="M86 104q10-14 20 0M134 104q10-14 20 0" />
           </g>
-          <!-- sorprendida / asombrada: ojos blancos grandes con pupila pequeña -->
-          <g v-else-if="mood === 'surprised' || mood === 'amazed'">
-            <ellipse cx="96" cy="100" :rx="mood === 'amazed' ? 16 : 13" :ry="mood === 'amazed' ? 18 : 15" fill="#fff" :stroke="LINE" stroke-width="4" />
-            <ellipse cx="144" cy="100" :rx="mood === 'amazed' ? 16 : 13" :ry="mood === 'amazed' ? 18 : 15" fill="#fff" :stroke="LINE" stroke-width="4" />
-            <circle cx="98" cy="102" :r="mood === 'amazed' ? 4.500 : 6" :fill="LINE" />
-            <circle cx="142" cy="102" :r="mood === 'amazed' ? 4.500 : 6" :fill="LINE" />
+          <!-- sorprendida: ojos blancos grandes con pupila pequeña -->
+          <g v-else-if="mood === 'surprised'">
+            <ellipse cx="96" cy="100" rx="13" ry="15" fill="#fff" :stroke="LINE" stroke-width="4" />
+            <ellipse cx="144" cy="100" rx="13" ry="15" fill="#fff" :stroke="LINE" stroke-width="4" />
+            <circle cx="98" cy="102" r="6" :fill="LINE" />
+            <circle cx="142" cy="102" r="6" :fill="LINE" />
             <circle cx="100" cy="100" r="1.800" fill="#fff" />
             <circle cx="144" cy="100" r="1.800" fill="#fff" />
+          </g>
+          <!-- asombrada (examen perfecto): ojos completamente blancos que brillan, con destellos -->
+          <g v-else-if="mood === 'amazed'">
+            <g class="mocca-glow">
+              <path d="M82 96c0-9 6-15 14-15s14 6 14 15c0 10-6 17-14 17s-14-7-14-17z" fill="#fff" :stroke="LINE" stroke-width="4" stroke-linejoin="round" />
+              <path d="M130 96c0-9 6-15 14-15s14 6 14 15c0 10-6 17-14 17s-14-7-14-17z" fill="#fff" :stroke="LINE" stroke-width="4" stroke-linejoin="round" />
+            </g>
+            <g class="mocca-starglint" fill="#fff">
+              <path d="M108 78c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" />
+              <path d="M156 78c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" />
+            </g>
           </g>
           <!-- orgullosa: gafas de sol -->
           <g v-else-if="mood === 'proud'" class="mocca-shades">
@@ -231,8 +242,9 @@ const arms = computed<[number, number]>(
           </template>
           <template v-else-if="mood === 'amazed'">
             <path d="M120 130v3" />
-            <path d="M109 134h22v14a11 11 0 0 1-22 0z" :fill="LINE" />
-            <ellipse cx="120" cy="151" rx="6.500" ry="4.500" :fill="EAR_IN" stroke="none" />
+            <path d="M100 134q20 30 40 0z" :fill="LINE" />
+            <path d="M104 136h32l-3 5h-26z" fill="#fff" stroke="none" />
+            <path d="M111 149q9-7 18 0-2 7-9 7t-9-7z" :fill="EAR_IN" stroke="none" />
           </template>
           <template v-else>
             <path d="M120 130v6" />
@@ -358,8 +370,7 @@ const arms = computed<[number, number]>(
   animation: none;
   transform: rotate(9deg);
 }
-.mocca--surprised .mocca-brow,
-.mocca--amazed .mocca-brow {
+.mocca--surprised .mocca-brow {
   transform: translateY(-10px);
 }
 .mocca--surprised .mocca-tail {
@@ -424,12 +435,35 @@ const arms = computed<[number, number]>(
   animation: tear 2.600s ease-in infinite;
 }
 
-/* ── asombrada: tiembla de la emoción ── */
+/* ── asombrada (examen perfecto): pose de poder, ojos blancos que brillan ── */
 .mocca--amazed .mocca-all {
-  animation: tremble 0.160s linear infinite;
+  animation: power 1.100s ease-in-out infinite;
 }
 .mocca--amazed .mocca-tail {
-  animation-duration: 0.180s;
+  animation-duration: 0.200s;
+}
+.mocca--amazed .mocca-arm--l {
+  animation: cheer-l 0.550s ease-in-out infinite alternate;
+}
+.mocca--amazed .mocca-arm--r {
+  animation: cheer-r 0.550s ease-in-out infinite alternate;
+}
+.mocca--amazed .mocca-brow--l {
+  transform: translateY(-6px) rotate(20deg);
+}
+.mocca--amazed .mocca-brow--r {
+  transform: translateY(-6px) rotate(-20deg);
+}
+.mocca-glow {
+  animation: eye-glow 1.100s ease-in-out infinite;
+}
+.mocca-starglint path {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: starglint 1.100s ease-in-out infinite;
+}
+.mocca-starglint path:nth-child(2) {
+  animation-delay: 0.300s;
 }
 
 /* ── orgullosa: gafas, pecho afuera, asiente con calma, destello en las gafas ── */
@@ -646,6 +680,31 @@ const arms = computed<[number, number]>(
   100% {
     transform: translateY(40px) scale(0.800);
     opacity: 0;
+  }
+}
+@keyframes power {
+  50% {
+    transform: scale(1.035, 1.035) translateY(-2px);
+  }
+}
+@keyframes eye-glow {
+  0%,
+  100% {
+    filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px #ffe58a);
+  }
+  50% {
+    filter: drop-shadow(0 0 7px #fff) drop-shadow(0 0 20px #ffd23f) drop-shadow(0 0 34px #ffb300);
+  }
+}
+@keyframes starglint {
+  0%,
+  100% {
+    transform: scale(0.500) rotate(0);
+    opacity: 0.600;
+  }
+  50% {
+    transform: scale(1.250) rotate(45deg);
+    opacity: 1;
   }
 }
 @keyframes tremble {
