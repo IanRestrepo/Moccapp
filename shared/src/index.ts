@@ -508,13 +508,18 @@ export interface GuideSection {
 }
 export interface ConceptNode {
   label: string
+  /** Frase de enlace con su padre: "se divide en", "produce"… (se dibuja sobre la línea) */
+  link?: string
+  /** El dato que hay que saberse de este concepto */
   detail?: string
   children?: ConceptNode[]
 }
 export interface StudyGuide {
   overview: string
   sections: GuideSection[]
-  conceptMap: { center: string; branches: ConceptNode[] }
+  /** Versión de las reglas con que se hizo; las viejas se rehacen solas */
+  version?: number
+  conceptMap: { center: string; centerFact?: string; branches: ConceptNode[] }
   /** "Antes del parcial debes poder…" */
   checklist: string[]
 }

@@ -13,7 +13,7 @@ process.env.STORAGE_DIR = await mkdtemp(path.join(os.tmpdir(), 'vetquiz-guide-')
 process.env.RETRY_BASE_MS = '2'
 
 const { setLlm } = await import('../src/ai/gemini.js')
-const { GUIDE_SYSTEM_PROMPT } = await import('../src/ai/prompts.js')
+const { GUIDE_SYSTEM_PROMPT, MAP_SYSTEM_PROMPT } = await import('../src/ai/prompts.js')
 const { createApp } = await import('../src/app.js')
 const { closeDb } = await import('../src/db/client.js')
 const { toGuide } = await import('../src/services/guide.js')
@@ -41,24 +41,37 @@ const section = (i: number) => ({
         ]
       : [],
   tip: i === 0 ? 'Truco de prueba' : '',
+  courseLogistics: false,
   bankTopics: [TOPICS[i]!],
   images: [] as { query: string; caption: string }[],
 })
+let mapCalls = 0
+let mapMode: 'ok' | 'fail' = 'ok'
+const leaf = (label: string, link = 'incluye', fact = `Dato de ${label}.`) => ({ label, link, fact })
 
 setLlm({
   async generateJson(p) {
     if (p.system === GUIDE_SYSTEM_PROMPT) {
       guideCalls++
-      if (guideMode === 'empty') return { insufficientContent: true, overview: '', sections: [], conceptMap: { center: '', branches: [] }, checklist: [] }
+      if (guideMode === 'empty') return { insufficientContent: true, overview: '', sections: [], checklist: [] }
       return {
         insufficientContent: false,
         overview: 'De qué trata el tema y por qué importa.',
         sections: [0, 1, 2].map(section),
-        conceptMap: {
-          center: 'Digestión',
-          branches: [{ label: 'Boca', detail: '', children: [{ label: 'Saliva', detail: 'Lubrica', children: [{ label: 'Amilasa', detail: '' }] }] }],
-        },
         checklist: ['Explicar la digestión en rumiantes'],
+      }
+    }
+    if (p.system === MAP_SYSTEM_PROMPT) {
+      mapCalls++
+      if (mapMode === 'fail') throw new Error('mapa caído')
+      return {
+        center: 'Digestión',
+        centerFact: 'Proceso que transforma el alimento en nutrientes.',
+        branches: [
+          { ...leaf('Boca', 'empieza en'), courseLogistics: false, children: [{ ...leaf('Saliva', 'Produce', 'Lubrica el bolo…'), children: [leaf('Amilasa', 'contiene…', '')] }] },
+          { ...leaf('Calendario Académico', 'se estructura en'), courseLogistics: true, children: [{ ...leaf('Clases y Semanas'), children: [] }] },
+          { ...leaf('Evaluación', 'se compone de'), courseLogistics: false, children: [] },
+        ],
       }
     }
     // banco: 6 preguntas por tema, mitad fáciles, mitad difíciles
@@ -124,19 +137,20 @@ test('la guía se limpia: sin viñetas vacías, tablas con celdas parejas y sin 
     insufficientContent: false,
     overview: ' Tema ',
     sections: [section(1), { ...section(0), title: ' ', summary: '' }],
-    conceptMap: { center: 'X', branches: [{ label: ' ', detail: '', children: [] }] },
     checklist: [' ', 'Saber algo'],
   })
   assert.equal(g.sections.length, 1)
   assert.deepEqual(g.sections[0]!.keyPoints, ['Idea clave uno', 'Idea clave dos'])
   assert.equal(g.sections[0]!.tables.length, 1)
   assert.deepEqual(g.sections[0]!.tables[0]!.rows, [['Rumen', 'Fermentación'], ['Abomaso', '']])
-  assert.deepEqual(g.conceptMap.branches, [])
   assert.deepEqual(g.checklist, ['Saber algo'])
+  // sin mapa de la IA, se arma uno con los temas y sus términos
+  assert.deepEqual(g.conceptMap.branches.map((b) => b.label), [g.sections[0]!.title])
+  assert.equal(g.conceptMap.branches[0]!.children![0]!.label, 'Término A1')
 })
 
 test('preguntas de términos: la correcta primero y 3 distractores distintos, cada uno con su definición', () => {
-  const g = toGuide({ insufficientContent: false, overview: '', sections: [0, 1].map(section), conceptMap: { center: '', branches: [] }, checklist: [] })
+  const g = toGuide({ insufficientContent: false, overview: '', sections: [0, 1].map(section), checklist: [] })
   const cards = termCards('src', 0, g)
   assert.equal(cards.length, 2)
   const d = cards[0]!.data
@@ -278,7 +292,7 @@ test('mini examen de un tema: trae las preguntas de ese tema y, desde la guía, 
 
 test('la logística del curso (metodología, evaluación, talleres) no sale en la guía ni en el mapa', async () => {
   const { withoutLogistics } = await import('../src/services/guide.js')
-  const base = toGuide({ insufficientContent: false, overview: '', sections: [0, 1].map(section), conceptMap: { center: 'Geopolítica', branches: [] }, checklist: [] })
+  const base = toGuide({ insufficientContent: false, overview: '', sections: [0, 1].map(section), checklist: [] })
   const g = withoutLogistics({
     ...base,
     sections: [...base.sections, { ...base.sections[0]!, title: 'Metodología y Clases' }, { ...base.sections[0]!, title: 'Evaluación clínica del paciente' }],
@@ -299,4 +313,59 @@ test('la logística del curso (metodología, evaluación, talleres) no sale en l
   // si TODO es logística (la fuente es el programa del curso) no se deja vacía
   const only = withoutLogistics({ ...base, sections: [{ ...base.sections[0]!, title: 'Evaluación' }] })
   assert.equal(only.sections.length, 1)
+})
+
+test('mapa conceptual: llamada aparte, con enlaces y datos, sin logística del curso; si falla, la guía sale igual', async () => {
+  guideMode = 'ok'
+  mapMode = 'ok'
+  const before = mapCalls
+  const id = await newSource('Cuarto tema de prueba con suficiente texto para estudiar el mapa. '.repeat(10))
+  await api('GET', `/guide/${id}`)
+  const ready = await until(
+    () => api<StudyGuideDTO>('GET', `/guide/${id}`),
+    (r) => r.body.status === 'ready',
+  )
+  assert.equal(mapCalls, before + 1)
+  const map = ready.body.guide!.conceptMap
+  assert.equal(map.centerFact, 'Proceso que transforma el alimento en nutrientes.')
+  // la rama marcada como logística y la que solo dice "Evaluación" no salen
+  assert.deepEqual(map.branches.map((b) => b.label), ['Boca'])
+  const saliva = map.branches[0]!.children![0]!
+  // enlace en minúscula y sin puntos suspensivos; dato sin "…"
+  assert.deepEqual([map.branches[0]!.link, saliva.link, saliva.detail], ['empieza en', 'produce', 'Lubrica el bolo'])
+  assert.deepEqual(saliva.children, [{ label: 'Amilasa', link: 'contiene' }])
+  assert.equal(ready.body.guide!.version, 2)
+
+  mapMode = 'fail'
+  const id2 = await newSource('Quinto tema de prueba, cuando el mapa de la IA no llega. '.repeat(10))
+  await api('GET', `/guide/${id2}`)
+  const r2 = await until(
+    () => api<StudyGuideDTO>('GET', `/guide/${id2}`),
+    (r) => r.body.status !== 'generating',
+  )
+  assert.equal(r2.body.status, 'ready')
+  assert.equal(r2.body.guide!.conceptMap.branches.length, 3)
+  mapMode = 'ok'
+})
+
+test('una guía hecha con reglas viejas se rehace sola al abrirla', async () => {
+  const { db } = await import('../src/db/client.js')
+  const { studyGuides } = await import('../src/db/schema.js')
+  const { eq } = await import('drizzle-orm')
+  const id = await newSource('Sexto tema de prueba para la guía vieja que se rehace. '.repeat(10))
+  await api('GET', `/guide/${id}`)
+  const first = await until(
+    () => api<StudyGuideDTO>('GET', `/guide/${id}`),
+    (r) => r.body.status === 'ready',
+  )
+  // se guarda como si fuera de la versión 1
+  await db.update(studyGuides).set({ data: { ...first.body.guide!, version: 1 } }).where(eq(studyGuides.sourceId, id))
+  const calls = guideCalls
+  const again = await api<StudyGuideDTO>('GET', `/guide/${id}`)
+  assert.equal(again.body.status, 'generating')
+  await until(
+    () => api<StudyGuideDTO>('GET', `/guide/${id}`),
+    (r) => r.body.status === 'ready',
+  )
+  assert.equal(guideCalls, calls + 1)
 })

@@ -256,8 +256,7 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
 
         <!-- MAPA -->
         <div v-else-if="tab === 'mapa'" class="mt-5">
-          <ConceptMap :center="guide.conceptMap.center || data.title" :branches="guide.conceptMap.branches" />
-          <p class="mt-6 text-center text-[13px] font-medium text-ink-3">Toca un dato subrayado para ver su explicación.</p>
+          <ConceptMap :center="guide.conceptMap.center || data.title" :center-fact="guide.conceptMap.centerFact" :branches="guide.conceptMap.branches" />
         </div>
 
         <!-- REPASO -->

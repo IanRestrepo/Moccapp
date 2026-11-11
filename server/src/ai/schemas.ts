@@ -223,9 +223,23 @@ const take =
   <T>(a: T[]) =>
     a.slice(0, n)
 
-const ConceptLeafSchema = z.object({ label: cut(80), detail: cut(240) })
-const ConceptMidSchema = ConceptLeafSchema.extend({ children: z.array(ConceptLeafSchema).transform(take(6)) })
-const ConceptBranchSchema = ConceptLeafSchema.extend({ children: z.array(ConceptMidSchema).transform(take(8)) })
+// Mapa conceptual (se pide en su propia llamada): concepto + frase de enlace con su padre + el dato que hay que saberse
+const MapLeafSchema = z.object({
+  label: cut(70).describe('Concepto, máx. 5 palabras'),
+  link: cut(50).describe('Frase de enlace con su padre, 1–4 palabras con verbo: "se divide en", "produce"…'),
+  fact: cut(260).describe('El dato concreto que hay que saberse de este concepto, una frase completa'),
+})
+const MapMidSchema = MapLeafSchema.extend({ children: z.array(MapLeafSchema).transform(take(5)) })
+const MapBranchSchema = MapLeafSchema.extend({
+  courseLogistics: z.boolean().describe('true solo si es organización del curso y no contenido académico'),
+  children: z.array(MapMidSchema).transform(take(7)),
+})
+export const MapResponseSchema = z.object({
+  center: cut(70),
+  centerFact: cut(260),
+  branches: z.array(MapBranchSchema).transform(take(8)),
+})
+export type MapResponse = z.infer<typeof MapResponseSchema>
 
 export const GuideResponseSchema = z.object({
   insufficientContent: z.boolean().describe('true si la fuente no tiene contenido académico suficiente'),
@@ -247,13 +261,13 @@ export const GuideResponseSchema = z.object({
             }),
           ).transform(take(2)),
         tip: cut(500).describe('Truco para recordar o dato clave; "" si no hay'),
+        courseLogistics: z.boolean().describe('true solo si la sección es organización del curso y no contenido académico'),
         bankTopics: z.array(cut(80)).transform(take(12)).describe('Temas del banco que corresponden, copiados exactos'),
         images: z
           .array(z.object({ query: cut(100), caption: cut(160) })).transform(take(2))
           .describe('0–2 imágenes que ayudarían a entender: búsqueda en INGLÉS para Wikimedia Commons y qué muestra, en español'),
       }),
     ).transform(take(16)),
-  conceptMap: z.object({ center: cut(80), branches: z.array(ConceptBranchSchema).transform(take(8)) }),
   checklist: z.array(cut(300)).transform(take(16)),
 })
 export type GuideResponse = z.infer<typeof GuideResponseSchema>
@@ -271,3 +285,4 @@ const stripLimits = (node: unknown): unknown => {
   )
 }
 export const guideJsonSchema = stripLimits(z.toJSONSchema(GuideResponseSchema, { io: 'input', unrepresentable: 'any' }))
+export const mapJsonSchema = stripLimits(z.toJSONSchema(MapResponseSchema, { io: 'input', unrepresentable: 'any' }))

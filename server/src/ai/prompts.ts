@@ -174,9 +174,9 @@ REGLAS OBLIGATORIAS:
 2. COBERTURA TOTAL: recorre la fuente de principio a fin, en su mismo orden, sin saltarte temas. Cada tema o bloque de la
    fuente debe quedar en alguna sección. Ignora solo la logística del curso (cronograma, correo del profesor, normas,
    forma de evaluación) y los metadatos (portada, logos).
-   PROHIBIDO en TODA la guía (secciones, mapa conceptual, términos, tablas y checklist): cómo se dicta o se califica
+   PROHIBIDO en TODA la guía (secciones, términos, tablas y checklist): cómo se dicta o se califica
    el curso — metodología, clases magistrales, seminarios, talleres, trabajos, exámenes y sus porcentajes o semanas,
-   fechas de entrega, bibliografía, datos del docente. Eso no se estudia. La guía y el mapa enseñan el TEMA académico.
+   fechas de entrega, bibliografía, datos del docente. También el calendario académico, semanas de clase y fechas. Eso no se estudia. La guía enseña el TEMA académico.
 3. Usa ÚNICAMENTE la información de la fuente. No agregues datos de tu conocimiento general. Copia EXACTOS los datos
    precisos: dosis, valores, nombres científicos, fármacos, vías, cifras, fechas, autores, países, tratados.
 4. Secciones ("sections"): entre 4 y 14, cada una un tema con sentido propio (no una por diapositiva). Para cada una:
@@ -197,17 +197,15 @@ REGLAS OBLIGATORIAS:
      "caption" = qué debe mirar en la imagen, en español (máx. 1 frase). En anatomía, histología, fisiología, patología,
      especies, razas, parásitos, plantas o geografía pon SIEMPRE al menos 1 (las imágenes ayudan muchísimo a memorizar).
      [] solo si el tema es abstracto (teorías, definiciones, normas) y una imagen no aporta.
+   - "courseLogistics": true SOLO si la sección no es contenido académico sino organización del curso (calendario
+     académico, semanas, fechas, cancelaciones, metodología, evaluación, porcentajes, normas, presentación del docente).
+     Lo ideal es no crear esas secciones; si creas una, márcala true y la app la descarta. En todo lo demás, false.
    - "bankTopics": de la lista de TEMAS DEL BANCO que te doy, copia EXACTAMENTE los que corresponden a esta sección
      (puede ser vacía; un tema puede ir en una sola sección).
 5. "overview": de qué trata la fuente y por qué importa, en 3 a 5 frases.
-6. "conceptMap": el mapa conceptual de TODO el tema, para estudiar SOLO con él. "center" = el tema central (corto).
-   "branches" = 4 a 7 ramas principales (los grandes bloques del tema). Cada rama con "children" de 3 a 6 ideas, y cada
-   idea con "children" de 2 a 4 datos concretos de la fuente (ejemplos, especies, cifras, fechas, nombres, tipos,
-   funciones). Etiquetas MUY cortas (máx. 6 palabras). "detail" SIEMPRE en ramas e ideas: una frase corta que diga la
-   relación ("se divide en…", "causa…", "se diferencia de… porque…"); en los datos, "detail" breve u "".
-7. "checklist": 6 a 15 cosas que ella debe poder hacer o explicar antes del parcial ("Explicar…", "Diferenciar…",
+6. "checklist": 6 a 15 cosas que ella debe poder hacer o explicar antes del parcial ("Explicar…", "Diferenciar…",
    "Nombrar…").
-8. Si la fuente es ilegible o no tiene contenido académico, responde insufficientContent = true y lo demás vacío.
+7. Si la fuente es ilegible o no tiene contenido académico, responde insufficientContent = true y lo demás vacío.
 
 Responde solo con el JSON pedido.`.trim()
 
@@ -219,3 +217,39 @@ export function guideUserPrompt(title: string, bankTopics: string[]): string {
       : 'TEMAS DEL BANCO: (ninguno todavía; deja "bankTopics" vacío)',
   ].join('\n\n')
 }
+
+
+// ── Mapa conceptual ──────────────────────────────────────────
+
+export const MAP_SYSTEM_PROMPT = `
+Eres un docente universitario experto en la materia de la fuente adjunta (Universidad Tecnológica de Pereira, Colombia).
+Vas a construir el MAPA CONCEPTUAL de esa fuente para una estudiante de Medicina Veterinaria y Zootecnia que va a
+estudiar para un parcial mirando SOLO el mapa. La fuente puede ser de cualquier asignatura.
+
+Un mapa conceptual es una red de CONCEPTOS unidos por FRASES DE ENLACE que se leen como oraciones:
+"Sistema linfoide —se divide en→ Órganos primarios —incluyen→ Timo —madura→ linfocitos T".
+
+REGLAS OBLIGATORIAS:
+1. Todo en ESPAÑOL. Usa ÚNICAMENTE información de la fuente; copia exactos los datos (cifras, nombres, especies, fechas).
+2. SOLO contenido académico del TEMA. PROHIBIDO todo lo que sea organización del curso: calendario académico, semanas,
+   fechas de clase o de entrega, cancelaciones, metodología, clases, talleres, trabajos, exámenes, porcentajes, notas,
+   bibliografía, docente. Si de todos modos creas una rama así, márcala "courseLogistics": true (la app la descarta).
+3. "center": el tema central en máx. 5 palabras. "centerFact": qué es, en una frase.
+4. "branches": 4 a 7 conceptos principales que cubran TODO el tema (no solo el comienzo). Cada uno con "children" de
+   3 a 6 subconceptos, y cada subconcepto con "children" de 2 a 4 conceptos más específicos (tipos, ejemplos,
+   estructuras, autores, especies, causas, consecuencias).
+5. En CADA nodo (rama, subconcepto y específico), tres campos:
+   - "label": el concepto, máx. 5 palabras, sin verbos ("Timo", "Teoría del Heartland", "Pulpa blanca").
+   - "link": la frase de enlace que lo une con su padre, 1 a 4 palabras, en minúscula y con verbo, de modo que
+     "padre + link + label" se lea como oración: "se divide en", "está formado por", "produce", "causa", "se ubica en",
+     "fue propuesta por", "se diferencia por", "por ejemplo". PROHIBIDO dejarla vacía, terminarla en "…" o usar
+     frases huecas como "comprende un total de", "se define como", "se estructura en" sin que tenga sentido.
+   - "fact": EL DATO que hay que saberse de ese concepto, en una frase completa de máx. 22 palabras, concreta y con
+     información real de la fuente: su definición, función, ubicación, valor, autor, diferencia o ejemplo.
+     Mal: "Factores geográficos — influyen directamente en…". Bien: "Factores geográficos — el suelo, el clima y la
+     posición de un Estado condicionan su poder y su política exterior". PROHIBIDO dejarlo vacío o cortado con "…".
+6. No repitas conceptos en dos ramas. Si la fuente no tiene contenido académico, responde branches = [].
+
+Responde solo con el JSON pedido.`.trim()
+
+export const mapUserPrompt = (title: string) => `Construye el mapa conceptual completo de la fuente "${title}".`

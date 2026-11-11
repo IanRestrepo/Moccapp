@@ -5,8 +5,8 @@ import type { ConceptNode, GuideSection, StudyGuide, StudyGuideDTO } from '@vetq
 import { db } from '../db/client.js'
 import { questionBank, studyGuides, sources, type StudyGuideRow } from '../db/schema.js'
 import { getLlm } from '../ai/gemini.js'
-import { GUIDE_SYSTEM_PROMPT, guideUserPrompt } from '../ai/prompts.js'
-import { GuideResponseSchema, guideJsonSchema, type GuideResponse } from '../ai/schemas.js'
+import { GUIDE_SYSTEM_PROMPT, MAP_SYSTEM_PROMPT, guideUserPrompt, mapUserPrompt } from '../ai/prompts.js'
+import { GuideResponseSchema, MapResponseSchema, guideJsonSchema, mapJsonSchema, type GuideResponse, type MapResponse } from '../ai/schemas.js'
 import { background } from '../lib/background.js'
 import { AppError, Errors } from '../lib/errors.js'
 import { withRetry } from '../lib/retry.js'
@@ -21,10 +21,48 @@ const STALE_MS = 6 * 60_000
 const isStale = (row: StudyGuideRow, now = Date.now()) => row.status === 'generating' && now - row.startedAt.getTime() > STALE_MS
 
 const clean = (s: string) => s.replace(/\s+\n/g, '\n').trim()
-const leaf = (n: { label: string; detail: string; children?: unknown[] }): ConceptNode => ({
+/**
+ * Versión de las reglas de la guía. Al subirla, las guías guardadas con una versión anterior se rehacen solas
+ * la próxima vez que se abren. v2: mapa conceptual en su propia llamada (con enlaces y datos) y sin logística del curso.
+ */
+export const GUIDE_VERSION = 2
+const outdated = (row: StudyGuideRow) => row.status === 'ready' && (row.data?.version ?? 1) < GUIDE_VERSION
+
+// frases de enlace huecas o cortadas ("se define como…") no enseñan nada
+const tidy = (s: string) => s.replace(/\s*(\.\.\.|…)\s*$/, '').trim()
+const node = (n: { label: string; link: string; fact: string }): ConceptNode => ({
   label: n.label.trim(),
-  ...(n.detail.trim() ? { detail: n.detail.trim() } : {}),
+  ...(tidy(n.link) ? { link: tidy(n.link).toLowerCase() } : {}),
+  ...(tidy(n.fact) ? { detail: tidy(n.fact) } : {}),
 })
+
+/** Lo que manda Gemini → el mapa que se guarda: sin ramas de logística, sin nodos vacíos */
+export function toMap(r: MapResponse): StudyGuide['conceptMap'] {
+  return {
+    center: r.center.trim(),
+    ...(tidy(r.centerFact) ? { centerFact: tidy(r.centerFact) } : {}),
+    branches: r.branches
+      .filter((b) => b.label.trim() && !b.courseLogistics && !isCourseLogistics(b.label))
+      .map((b) => ({
+        ...node(b),
+        children: b.children
+          .filter((c) => c.label.trim() && !isCourseLogistics(c.label))
+          .map((c) => ({ ...node(c), children: c.children.filter((d) => d.label.trim()).map(node) })),
+      })),
+  }
+}
+
+/** Si la llamada del mapa falla, uno básico con lo que ya trae la guía: temas → lo que no puede faltar */
+export function mapFromSections(title: string, sections: GuideSection[]): StudyGuide['conceptMap'] {
+  return {
+    center: title,
+    branches: sections.map((s) => ({
+      label: s.title,
+      link: 'incluye',
+      children: s.terms.slice(0, 5).map((t) => ({ label: t.term, link: 'define', detail: t.definition })),
+    })),
+  }
+}
 
 /** Logística del curso (cómo se dicta y se califica): no es tema de estudio y no debe salir en guías ni mapas */
 const LOGISTIC_WORD = '(metodolog[ií]a|evaluaci[oó]n|calificaci[oó]n|cronograma|bibliograf[ií]a|talleres|ex[aá]menes|trabajos|actividades|estrategias|clases|notas)'
@@ -44,6 +82,9 @@ const COURSE_LOGISTICS = new RegExp(
     'examen (escrito|parcial|final) \\d',
     'vale el \\d+ ?%',
     '^\\s*(taller|quiz|parcial) \\d',
+    'calendario acad[eé]mico',
+    'semana muerta',
+    '^\\s*(clases y semanas|cancelaciones|fechas de (clase|entrega|ex[aá]menes|medicina))(\\s|$)',
   ].join('|'),
   'i',
 )
@@ -67,12 +108,18 @@ export function withoutLogistics(g: StudyGuide): StudyGuide {
 }
 
 /** Búsquedas de imágenes de cada sección que quedó en la guía (mismo orden que guide.sections) */
-export const imageQueries = (r: GuideResponse) =>
-  r.sections.filter((s) => s.title.trim() && s.summary.trim()).map((s) => ({ images: s.images.filter((i) => i.query.trim()) }))
+export const imageQueries = (r: GuideResponse) => keptSections(r).map((s) => ({ images: s.images.filter((i) => i.query.trim()) }))
 
-/** Lo que manda Gemini → la guía que se guarda (sin vacíos ni tablas rotas). Las imágenes se buscan aparte. */
-export function toGuide(r: GuideResponse): StudyGuide {
-  const sections: GuideSection[] = r.sections
+/** Secciones con contenido y que no son logística del curso (si TODAS lo son, se dejan: la fuente es el programa) */
+function keptSections(r: GuideResponse) {
+  const full = r.sections.filter((s) => s.title.trim() && s.summary.trim())
+  const academic = full.filter((s) => !s.courseLogistics && !isCourseLogistics(s.title))
+  return academic.length ? academic : full
+}
+
+/** Lo que manda Gemini → la guía que se guarda (sin vacíos ni tablas rotas). Imágenes y mapa van aparte. */
+export function toGuide(r: GuideResponse, title = '', map: StudyGuide['conceptMap'] | null = null): StudyGuide {
+  const sections: GuideSection[] = keptSections(r)
     .map((s) => ({
       title: s.title.trim(),
       location: s.location.trim(),
@@ -91,19 +138,11 @@ export function toGuide(r: GuideResponse): StudyGuide {
       bankTopics: s.bankTopics.map((b) => b.trim()).filter(Boolean),
       images: [],
     }))
-    .filter((s) => s.title && s.summary)
   return {
+    version: GUIDE_VERSION,
     overview: r.overview.trim(),
     sections,
-    conceptMap: {
-      center: r.conceptMap.center.trim(),
-      branches: r.conceptMap.branches
-        .filter((b) => b.label.trim())
-        .map((b) => ({
-          ...leaf(b),
-          children: b.children.filter((c) => c.label.trim()).map((c) => ({ ...leaf(c), children: c.children.filter((d) => d.label.trim()).map(leaf) })),
-        })),
-    },
+    conceptMap: map?.branches.length ? map : mapFromSections(title, sections),
     checklist: r.checklist.map((c) => c.trim()).filter(Boolean),
   }
 }
@@ -115,6 +154,23 @@ async function generate(sourceId: string): Promise<void> {
     if (!source) return
     const parts = await buildSourceParts(source)
     const topics = [...new Set((await db.select({ topic: questionBank.topic }).from(questionBank).where(eq(questionBank.sourceId, sourceId))).map((q) => q.topic))]
+    // el mapa conceptual va en su propia llamada, en paralelo: sale mucho más completo que pedido junto con la guía
+    const mapJob = withRetry(async () => {
+      const raw = await getLlm().generateJson({
+        system: MAP_SYSTEM_PROMPT,
+        source: parts,
+        prompt: mapUserPrompt(source.title),
+        jsonSchema: mapJsonSchema,
+        temperature: 0.3,
+        thinking: 'low',
+      })
+      const parsed = MapResponseSchema.safeParse(raw)
+      if (!parsed.success) throw new AppError(502, 'AI_BAD_SHAPE', Errors.aiFailed().message, true)
+      return toMap(parsed.data)
+    }).catch((err) => {
+      log(sourceId, `sin mapa de la IA (${err instanceof AppError ? err.code : err}): se arma con los temas`)
+      return null
+    })
     const { g: guide, queries } = await withRetry(
       async () => {
         const raw = await getLlm().generateJson({
@@ -129,7 +185,7 @@ async function generate(sourceId: string): Promise<void> {
         const parsed = GuideResponseSchema.safeParse(raw)
         if (!parsed.success) throw new AppError(502, 'AI_BAD_SHAPE', Errors.aiFailed().message, true)
         if (parsed.data.insufficientContent) throw Errors.noContent()
-        const g = toGuide(parsed.data)
+        const g = toGuide(parsed.data, source.title, await mapJob)
         if (g.sections.length === 0) throw new AppError(502, 'AI_EMPTY_GUIDE', Errors.aiFailed().message, true)
         return { g, queries: imageQueries(parsed.data) }
       },
@@ -159,7 +215,7 @@ const running = new Map<string, Promise<void>>()
 export async function ensureGuide(sourceId: string, retry = false): Promise<void> {
   if (running.has(sourceId)) return
   const [row] = await db.select().from(studyGuides).where(eq(studyGuides.sourceId, sourceId))
-  if (row && ((row.status === 'generating' && !isStale(row)) || (!retry && row.status !== 'generating'))) return
+  if (row && ((row.status === 'generating' && !isStale(row)) || (!retry && row.status !== 'generating' && !outdated(row)))) return
   const values = { status: 'generating' as const, errorMessage: null, startedAt: new Date(), updatedAt: new Date() }
   // solo un arranque gana aunque lleguen dos peticiones a la vez
   const claimed = row
@@ -178,8 +234,9 @@ export async function guidesFor(sourceIds: string[]): Promise<Map<string, StudyG
   return new Map(rows.map((r) => [r.sourceId, { ...r, data: r.data && withoutLogistics(r.data) }]))
 }
 
+/** Una guía de una versión anterior cuenta como "no hay": se rehace al abrirla */
 export const guideStatus = (row: StudyGuideRow | undefined): StudyGuideDTO['status'] =>
-  !row ? 'none' : isStale(row) ? 'error' : row.status
+  !row || outdated(row) ? 'none' : isStale(row) ? 'error' : row.status
 
 export async function getGuide(sourceId: string, start = true): Promise<StudyGuideDTO> {
   const source = await getSource(sourceId)
