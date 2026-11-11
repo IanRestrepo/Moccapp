@@ -469,6 +469,67 @@ export interface StudyDeckDTO {
   cards: StudyCardDTO[]
 }
 
+// ── Guía de estudio (resumen completo + mapa conceptual) ────
+export interface GuideTerm {
+  term: string
+  definition: string
+}
+export interface GuideTable {
+  title: string
+  columns: string[]
+  rows: string[][]
+}
+export interface GuideImage {
+  url: string
+  width: number
+  height: number
+  /** Qué muestra, en español */
+  caption: string
+  credit: string
+  license: string
+  /** Página de la imagen en Wikimedia Commons */
+  link: string
+}
+export interface GuideSection {
+  title: string
+  /** "Páginas 3–7", "Diapositivas 10–14", "min 05:00–12:30" o "" */
+  location: string
+  /** Párrafos separados por línea en blanco; **negrita** para lo clave */
+  summary: string
+  keyPoints: string[]
+  terms: GuideTerm[]
+  tables: GuideTable[]
+  /** Truco para recordar o dato que siempre preguntan ("" si no hay) */
+  tip: string
+  /** Temas del banco de preguntas que corresponden a esta sección (para el camino) */
+  bankTopics: string[]
+  /** Imágenes de referencia (Wikimedia Commons) */
+  images: GuideImage[]
+}
+export interface ConceptNode {
+  label: string
+  detail?: string
+  children?: ConceptNode[]
+}
+export interface StudyGuide {
+  overview: string
+  sections: GuideSection[]
+  conceptMap: { center: string; branches: ConceptNode[] }
+  /** "Antes del parcial debes poder…" */
+  checklist: string[]
+}
+export type GuideStatus = 'none' | 'generating' | 'ready' | 'error'
+export interface StudyGuideDTO {
+  sourceId: string
+  title: string
+  color: SourceColor
+  status: GuideStatus
+  guide: StudyGuide | null
+  error: string | null
+  /** Preguntas listas en el banco (para el botón de examen) */
+  questions: number
+}
+
 // ── Camino (tipo Duolingo) ──────────────────────────────────
 export type PathNodeKind = 'lesson' | 'boss' | 'chest'
 export type PathNodeStatus = 'locked' | 'current' | 'done'
@@ -487,6 +548,8 @@ export interface PathUnitDTO {
   sourceId: string
   title: string
   color: SourceColor
+  /** ready = el camino recorre toda la guía, sección por sección */
+  guide: GuideStatus
   nodes: PathNodeDTO[]
 }
 
@@ -505,6 +568,8 @@ export interface PathLessonDTO {
   color: SourceColor
   kind: PathNodeKind
   cards: StudyCardDTO[]
+  /** Lo que lee antes de practicar (lecciones hechas desde la guía) */
+  section: GuideSection | null
 }
 
 export const PathCompleteSchema = z.object({
@@ -597,7 +662,7 @@ export interface AdminPersonDTO extends PresenceDTO {
 }
 
 // ── Presencia (solo el administrador la ve) ─────────────────
-export const PRESENCE_VIEWS = ['home', 'sources', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
+export const PRESENCE_VIEWS = ['home', 'sources', 'guide', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
 export type PresenceView = (typeof PRESENCE_VIEWS)[number]
 export const PresencePingSchema = z.object({ view: z.enum(PRESENCE_VIEWS).catch('other') })
 

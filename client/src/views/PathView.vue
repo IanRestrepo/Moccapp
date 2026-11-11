@@ -3,7 +3,7 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { motion } from 'motion-v'
 import confetti from 'canvas-confetti'
-import { PhArrowLeft, PhBook, PhCheck, PhCrown, PhLock, PhStar, PhTreasureChest } from '@phosphor-icons/vue'
+import { PhArrowLeft, PhBook, PhBookOpenText, PhCheck, PhCrown, PhLock, PhStar, PhTreasureChest } from '@phosphor-icons/vue'
 import type { PathDTO, PathNodeDTO, SourceColor } from '@vetquiz/shared'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import { api, ApiRequestError } from '@/api/client'
@@ -161,6 +161,21 @@ const icon = (n: PathNodeDTO) =>
         <div :class="['rounded-card p-5', colorClasses[unit.color].solid]">
           <p class="text-[13px] font-bold uppercase tracking-wide opacity-70">Unidad {{ u + 1 }}</p>
           <h2 class="mt-0.5 font-display text-[20px] font-extrabold leading-tight">{{ unit.title }}</h2>
+          <p class="mt-1.5 text-[13px] font-semibold opacity-70">
+            {{
+              unit.guide === 'ready'
+                ? `Recorre todo el tema: ${unit.nodes.filter((n) => n.kind === 'lesson').length} temas, leer y practicar`
+                : unit.guide === 'generating'
+                  ? 'Mocca está armando la guía completa: pronto este camino recorrerá todo el tema'
+                  : 'Abre la guía para que este camino recorra todo el tema'
+            }}
+          </p>
+          <button
+            class="mt-3 flex items-center gap-1.5 rounded-full bg-white/45 px-3.5 py-2 text-[13.5px] font-bold"
+            @click="router.push(`/guia/${unit.sourceId}`)"
+          >
+            <PhBookOpenText :size="17" weight="bold" /> Guía de estudio
+          </button>
         </div>
 
         <ol class="relative mt-14 flex flex-col items-center gap-12">
@@ -201,7 +216,7 @@ const icon = (n: PathNodeDTO) =>
             <span v-if="n.kind !== 'chest'" class="mt-3 flex gap-0.5" :aria-label="`${n.stars} estrellas`">
               <PhStar v-for="s in 3" :key="s" :size="15" weight="fill" :class="s <= n.stars ? 'text-yellow' : 'text-ink-3/30'" />
             </span>
-            <span class="mt-0.5 text-[12px] font-bold text-ink-2">{{ n.label }}</span>
+            <span class="mt-0.5 line-clamp-2 max-w-[150px] text-center text-[12px] font-bold leading-tight text-ink-2">{{ n.label }}</span>
 
             <!-- Mocca acompaña el nodo actual -->
             <MascotBlob

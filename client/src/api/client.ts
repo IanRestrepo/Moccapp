@@ -17,6 +17,7 @@ import type {
   CollectionInput,
   StudyDeckDTO,
   PathDTO,
+  StudyGuideDTO,
   PathLessonDTO,
   PathCompleteResponse,
   PresenceView,
@@ -191,6 +192,10 @@ export const api = {
 
   // Modo estudio
   studyDeck: (sourceIds: string[]) => request<StudyDeckDTO>('GET', `/study?sources=${sourceIds.join(',')}`),
+
+  // Guía de estudio
+  guide: (sourceId: string) => request<StudyGuideDTO>('GET', `/guide/${sourceId}`),
+  retryGuide: (sourceId: string) => request<StudyGuideDTO>('POST', `/guide/${sourceId}/retry`),
 
   // Camino
   path: () => request<PathDTO>('GET', '/path'),

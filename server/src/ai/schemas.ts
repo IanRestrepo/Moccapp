@@ -214,3 +214,60 @@ export const FILL_BANK_PLANS: { plan: GenerationPlan; thinking: 'low' | 'default
     thinking: 'default',
   },
 ]
+
+// ── Guía de estudio ──────────────────────────────────────────
+// Sin rechazar por largo: lo que se pase se recorta (un párrafo de más no debe tumbar toda la guía).
+const cut = (n: number) => z.string().transform((s) => s.slice(0, n))
+const take =
+  (n: number) =>
+  <T>(a: T[]) =>
+    a.slice(0, n)
+
+const ConceptLeafSchema = z.object({ label: cut(80), detail: cut(240) })
+const ConceptMidSchema = ConceptLeafSchema.extend({ children: z.array(ConceptLeafSchema).transform(take(6)) })
+const ConceptBranchSchema = ConceptLeafSchema.extend({ children: z.array(ConceptMidSchema).transform(take(8)) })
+
+export const GuideResponseSchema = z.object({
+  insufficientContent: z.boolean().describe('true si la fuente no tiene contenido académico suficiente'),
+  overview: cut(1500).describe('De qué trata y por qué importa, 3–5 frases'),
+  sections: z
+    .array(
+      z.object({
+        title: cut(120),
+        location: cut(80).describe('"Páginas 3–7", "Diapositivas 10–14", "min 05:00–12:30" o ""'),
+        summary: cut(6000).describe('2–5 párrafos separados por línea en blanco; **negrita** para lo clave'),
+        keyPoints: z.array(cut(400)).transform(take(10)),
+        terms: z.array(z.object({ term: cut(120), definition: cut(500) })).transform(take(10)),
+        tables: z
+          .array(
+            z.object({
+              title: cut(120),
+              columns: z.array(cut(80)).transform(take(5)),
+              rows: z.array(z.array(cut(200)).transform(take(5))).transform(take(12)),
+            }),
+          ).transform(take(2)),
+        tip: cut(500).describe('Truco para recordar o dato clave; "" si no hay'),
+        bankTopics: z.array(cut(80)).transform(take(12)).describe('Temas del banco que corresponden, copiados exactos'),
+        images: z
+          .array(z.object({ query: cut(100), caption: cut(160) })).transform(take(2))
+          .describe('0–2 imágenes que ayudarían a entender: búsqueda en INGLÉS para Wikimedia Commons y qué muestra, en español'),
+      }),
+    ).transform(take(16)),
+  conceptMap: z.object({ center: cut(80), branches: z.array(ConceptBranchSchema).transform(take(8)) }),
+  checklist: z.array(cut(300)).transform(take(16)),
+})
+export type GuideResponse = z.infer<typeof GuideResponseSchema>
+/**
+ * A Gemini se le manda SIN límites de largo ni de cantidad: con tantas listas anidadas, esos límites hacen que
+ * rechace el esquema ("too many states"). Los límites los aplica Zod al recibir, y toGuide recorta.
+ */
+const stripLimits = (node: unknown): unknown => {
+  if (Array.isArray(node)) return node.map(stripLimits)
+  if (!node || typeof node !== 'object') return node
+  return Object.fromEntries(
+    Object.entries(node)
+      .filter(([k]) => !['maxLength', 'minLength', 'maxItems', 'minItems', '$schema', 'additionalProperties'].includes(k))
+      .map(([k, v]) => [k, stripLimits(v)]),
+  )
+}
+export const guideJsonSchema = stripLimits(z.toJSONSchema(GuideResponseSchema, { io: 'input', unrepresentable: 'any' }))

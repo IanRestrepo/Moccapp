@@ -6,6 +6,7 @@ import {
   PhArrowsClockwise,
   PhBell,
   PhBookOpen,
+  PhBookOpenText,
   PhCards,
   PhChartBar,
   PhChatCircleText,
@@ -81,6 +82,7 @@ const statusText = (p: AdminPersonDTO) =>
 const VIEW_ICON: Record<PresenceView, unknown> = {
   home: PhHouse,
   sources: PhFolders,
+  guide: PhBookOpenText,
   configure: PhSliders,
   study: PhCards,
   path: PhPath,
@@ -101,6 +103,7 @@ const now = ref(Date.now())
 const VIEW_LABEL: Record<PresenceView, string> = {
   home: 'en el Inicio',
   sources: 'viendo sus fuentes',
+  guide: 'leyendo una guía de estudio',
   configure: 'armando un examen',
   study: 'estudiando con tarjetas',
   path: 'mirando su camino',

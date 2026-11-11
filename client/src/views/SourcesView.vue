@@ -39,7 +39,7 @@ function moveSource(s: SourceDTO) {
 
 function open(s: SourceDTO) {
   if (menuFor.value) return void (menuFor.value = null)
-  if (s.status === 'ready') router.push({ path: '/configurar', query: { source: s.id } })
+  if (s.status === 'ready') router.push(`/guia/${s.id}`)
   else if (s.status === 'error') api.retrySource(s.id).then(sources.upsert)
 }
 

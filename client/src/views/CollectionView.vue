@@ -31,7 +31,7 @@ const readyIds = computed(() => inside.value.filter((s) => s.status === 'ready')
 const questions = computed(() => inside.value.reduce((a, s) => a + s.bank.total, 0))
 
 function openSource(s: SourceDTO) {
-  if (s.status === 'ready') router.push({ path: '/configurar', query: { source: s.id } })
+  if (s.status === 'ready') router.push(`/guia/${s.id}`)
   else if (s.status === 'error') api.retrySource(s.id).then(sources.upsert)
 }
 

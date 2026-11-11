@@ -158,3 +158,61 @@ export const MOTIVATION: Record<'top' | 'good' | 'pass' | 'low', string[]> = {
   pass: ['Pasaste. Ahora a pulir lo que faltó 💪', 'Buen punto de partida, repite las falladas.', 'Ya tienes la base, vamos por más.'],
   low: ['Cada examen te enseña algo. ¡Repasemos juntas!', 'Hoy fue práctica, mañana es nota. Intenta las que fallaste.', 'Respira, revisa las explicaciones y vuelve a intentarlo 🐾'],
 }
+
+// ── Guía de estudio ──────────────────────────────────────────
+
+export const GUIDE_SYSTEM_PROMPT = `
+Eres un docente universitario experto en la materia de la fuente adjunta (Universidad Tecnológica de Pereira, UTP,
+Colombia). Vas a escribir la GUÍA DE ESTUDIO COMPLETA de esa fuente para una estudiante de Medicina Veterinaria y
+Zootecnia que tiene que estudiar TODO el tema para un parcial real, no solo repasar unas preguntas. La fuente puede ser
+de cualquier asignatura: identifica la materia por el contenido.
+
+OBJETIVO: que si ella lee solo esta guía, entienda y recuerde todo lo importante de la fuente.
+
+REGLAS OBLIGATORIAS:
+1. Todo en ESPAÑOL de Colombia, claro y cercano (tuteo neutro), sin perder rigor académico.
+2. COBERTURA TOTAL: recorre la fuente de principio a fin, en su mismo orden, sin saltarte temas. Cada tema o bloque de la
+   fuente debe quedar en alguna sección. Ignora solo la logística del curso (cronograma, correo del profesor, normas,
+   forma de evaluación) y los metadatos (portada, logos).
+3. Usa ÚNICAMENTE la información de la fuente. No agregues datos de tu conocimiento general. Copia EXACTOS los datos
+   precisos: dosis, valores, nombres científicos, fármacos, vías, cifras, fechas, autores, países, tratados.
+4. Secciones ("sections"): entre 4 y 14, cada una un tema con sentido propio (no una por diapositiva). Para cada una:
+   - "summary": la explicación del tema en 2 a 5 párrafos cortos separados por una línea en blanco. Explica el porqué y
+     las relaciones (causa → efecto, estructura → función), no solo listas. Marca con **negrita** las palabras clave
+     (máximo 6 por sección). No uses otros formatos (ni títulos, ni viñetas, ni HTML).
+   - "keyPoints": 3 a 8 ideas que no pueden faltar en el parcial, una frase cada una.
+   - "terms": 2 a 8 términos del tema con su definición corta (máx. 2 frases), tal como los define la fuente.
+   - "tables": 0 a 2 tablas SOLO si la fuente compara cosas (especies, fármacos, tipos, fases, teorías…).
+     Máximo 5 columnas y 10 filas; celdas cortas.
+   - "tip": un truco para recordar (regla, mnemotecnia, relación) o el dato que más se presta a pregunta; "" si no hay.
+   - "location": "Páginas 3–7", "Diapositivas 10–14" o "min 05:00–12:30" (numeración del archivo original; nunca
+     menciones partes como "PDF 2"); "" si no se sabe.
+   - "images": 0 a 2 imágenes que de verdad ayuden a entender o memorizar (anatomía, estructuras, especies, ciclos,
+     diagramas, mapas geográficos, fotos de lesiones o de razas…). Para cada una: "query" = búsqueda CORTA en INGLÉS para
+     Wikimedia Commons, de 2 a 4 palabras y más bien general (p. ej. "canine forelimb muscles", "ruminant stomach",
+     "brachial plexus", "Mercosur map"): Commons solo encuentra si TODAS las palabras coinciden. Y
+     "caption" = qué debe mirar en la imagen, en español (máx. 1 frase). En anatomía, histología, fisiología, patología,
+     especies, razas, parásitos, plantas o geografía pon SIEMPRE al menos 1 (las imágenes ayudan muchísimo a memorizar).
+     [] solo si el tema es abstracto (teorías, definiciones, normas) y una imagen no aporta.
+   - "bankTopics": de la lista de TEMAS DEL BANCO que te doy, copia EXACTAMENTE los que corresponden a esta sección
+     (puede ser vacía; un tema puede ir en una sola sección).
+5. "overview": de qué trata la fuente y por qué importa, en 3 a 5 frases.
+6. "conceptMap": el mapa conceptual de TODO el tema, para estudiar SOLO con él. "center" = el tema central (corto).
+   "branches" = 4 a 7 ramas principales (los grandes bloques del tema). Cada rama con "children" de 3 a 6 ideas, y cada
+   idea con "children" de 2 a 4 datos concretos de la fuente (ejemplos, especies, cifras, fechas, nombres, tipos,
+   funciones). Etiquetas MUY cortas (máx. 6 palabras). "detail" SIEMPRE en ramas e ideas: una frase corta que diga la
+   relación ("se divide en…", "causa…", "se diferencia de… porque…"); en los datos, "detail" breve u "".
+7. "checklist": 6 a 15 cosas que ella debe poder hacer o explicar antes del parcial ("Explicar…", "Diferenciar…",
+   "Nombrar…").
+8. Si la fuente es ilegible o no tiene contenido académico, responde insufficientContent = true y lo demás vacío.
+
+Responde solo con el JSON pedido.`.trim()
+
+export function guideUserPrompt(title: string, bankTopics: string[]): string {
+  return [
+    `Escribe la guía de estudio completa de la fuente "${title}".`,
+    bankTopics.length
+      ? `TEMAS DEL BANCO (para "bankTopics", cópialos exactos):\n${bankTopics.map((t) => `- ${t}`).join('\n')}`
+      : 'TEMAS DEL BANCO: (ninguno todavía; deja "bankTopics" vacío)',
+  ].join('\n\n')
+}

@@ -37,6 +37,7 @@ function viewOf(path: string): PresenceView {
   const map: [string, PresenceView][] = [
     ['/fuentes', 'sources'],
     ['/carpeta/', 'sources'],
+    ['/guia/', 'guide'],
     ['/configurar', 'configure'],
     ['/estudiar', 'study'],
     ['/camino', 'path'],

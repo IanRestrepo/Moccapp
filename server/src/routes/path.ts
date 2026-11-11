@@ -5,7 +5,8 @@ import { completeLesson, getLesson, getPath, openChest } from '../services/path.
 
 export const pathRouter = Router()
 
-const Key = z.string().regex(/^[0-9a-f-]{36}:(\d|chest)$/)
+// "<fuente>:3" (lecciones por dificultad), "<fuente>:s3" (sección de la guía), ":boss" y ":chest"
+const Key = z.string().regex(/^[0-9a-f-]{36}:(\d{1,2}|s\d{1,2}|boss|chest)$/)
 
 pathRouter.get('/', async (_req, res) => {
   res.json(await getPath())

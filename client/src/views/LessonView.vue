@@ -9,10 +9,11 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import ChoiceQuestion from '@/components/questions/ChoiceQuestion.vue'
 import MatchingQuestion from '@/components/questions/MatchingQuestion.vue'
+import GuideSectionBody from '@/components/guide/GuideSectionBody.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { useSound } from '@/composables/useSound'
 import { useStatsStore } from '@/stores/stats'
-import { spring } from '@/lib/motion'
+import { colorClasses, spring } from '@/lib/motion'
 
 /**
  * Lección del camino, estilo Duolingo: una pregunta por pantalla → "Comprobar" → franja verde o roja.
@@ -55,6 +56,7 @@ const learnCards = computed(() => {
 })
 const learnCard = computed(() => learnCards.value[learnIndex.value] ?? null)
 function nextLearn() {
+  if (lesson.value?.section) return startPractice()
   if (learnIndex.value < learnCards.value.length - 1) {
     learnIndex.value++
     play('tap')
@@ -63,6 +65,8 @@ function nextLearn() {
 function startPractice() {
   phase.value = 'practice'
   play('pop')
+  // sección solo para leer (sin preguntas): leerla ya cuenta como lección hecha
+  if (!queue.value.length) void finish()
 }
 const error = ref('')
 const saving = ref(false)
@@ -151,7 +155,8 @@ async function next() {
 async function finish() {
   saving.value = true
   try {
-    result.value = await api.completeLesson(key, { firstTry: firstTry.value, total: total.value })
+    const read = total.value === 0
+    result.value = await api.completeLesson(key, read ? { firstTry: 1, total: 1 } : { firstTry: firstTry.value, total: total.value })
     play(result.value.stars === 3 ? 'perfect' : 'finish')
     if (result.value.stars === 3) confetti({ particleCount: 110, spread: 80, origin: { y: 0.5 }, colors: ['#f2b31f', '#8d6ce6', '#ee5fa8', '#35b673'] })
     stats.refresh().catch(() => {})
@@ -178,7 +183,7 @@ function exit() {
         <div
           :class="['h-full rounded-full transition-[width] duration-500', phase === 'learn' ? 'bg-sky' : 'bg-mint']"
           :style="{
-            width: phase === 'learn' ? `${learnCards.length ? ((learnIndex + 1) / learnCards.length) * 100 : 0}%` : `${total ? (correctCount / total) * 100 : 0}%`,
+            width: phase === 'learn' ? `${lesson?.section ? 15 : learnCards.length ? ((learnIndex + 1) / learnCards.length) * 100 : 0}%` : `${total ? (correctCount / total) * 100 : 0}%`,
           }"
         />
       </div>
@@ -213,6 +218,29 @@ function exit() {
       </div>
       <BaseButton class="mt-10" size="xl" block @click="router.push('/camino')">Continuar</BaseButton>
     </section>
+
+    <!-- Aprende: la sección completa de la guía -->
+    <template v-else-if="phase === 'learn' && lesson?.section">
+      <section class="flex-1 pb-36 pt-6">
+        <div class="flex items-center gap-3">
+          <MascotBlob mood="happy" :size="64" />
+          <p class="rounded-[18px] rounded-bl-none bg-surface px-4 py-2.5 text-[14px] font-bold ring-1 ring-line">
+            Lee este tema con calma. Luego te pregunto sobre él.
+          </p>
+        </div>
+        <p class="mt-6 text-[13px] font-bold uppercase tracking-wide text-ink-3">{{ lesson.unitTitle }}</p>
+        <h1 class="mt-1 font-display text-[24px] font-extrabold leading-tight tracking-[-0.01em]">{{ lesson.section.title }}</h1>
+        <p v-if="lesson.section.location" class="mt-0.5 text-[12.5px] font-bold text-ink-3">{{ lesson.section.location }}</p>
+        <GuideSectionBody class="mt-4" :section="lesson.section" :tint="colorClasses[lesson.color].tint" />
+      </section>
+      <div class="fixed inset-x-0 bottom-0 z-30 border-t-2 border-line bg-bg px-4 pb-[max(1.25rem,env(safe-area-inset-bottom))] pt-4">
+        <div class="mx-auto max-w-[560px]">
+          <BaseButton size="xl" block :loading="saving" @click="nextLearn">
+            {{ total ? `¡A practicar! (${total} preguntas)` : 'Listo, lo leí' }}
+          </BaseButton>
+        </div>
+      </div>
+    </template>
 
     <!-- Aprende -->
     <template v-else-if="phase === 'learn' && learnCard && lesson">
@@ -260,8 +288,8 @@ function exit() {
           :exit="{ opacity: 0, x: -40 }"
           :transition="spring.card"
         >
-          <p class="text-[13px] font-bold text-ink-3">{{ item.retry ? 'Otra vez esta' : lesson.label }} · {{ item.card.topic }}</p>
-          <h2 class="mt-2 font-display text-[22px] font-bold leading-snug tracking-[-0.01em]">{{ item.card.prompt }}</h2>
+          <p class="text-[13px] font-bold text-ink-3">{{ item.retry ? 'Otra vez esta' : lesson.label }}{{ item.card.topic !== lesson.label ? ` · ${item.card.topic}` : '' }}</p>
+          <h2 class="mt-2 whitespace-pre-line font-display text-[22px] font-bold leading-snug tracking-[-0.01em]">{{ item.card.prompt }}</h2>
           <div :class="['mt-5', checked !== null && 'pointer-events-none']">
             <MatchingQuestion
               v-if="item.card.data.type === 'matching'"

@@ -78,6 +78,13 @@
       "when": 1792600000000,
       "tag": "0010_mocca_messages",
       "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1792700000000,
+      "tag": "0011_study_guides",
+      "breakpoints": true
     }
   ]
 }

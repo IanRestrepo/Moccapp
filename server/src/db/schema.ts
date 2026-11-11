@@ -27,6 +27,7 @@ import {
   type Difficulty,
   type QuestionData,
   type QuestionType,
+  type StudyGuide,
 } from '@vetquiz/shared'
 
 // ── Enums ────────────────────────────────────────────────────
@@ -366,3 +367,19 @@ export const pushSubscriptions = pgTable('push_subscriptions', {
 })
 
 export type UserStats = typeof userStats.$inferSelect
+
+// ── study_guides ─────────────────────────────────────────────
+// Guía de estudio de cada fuente (resumen por secciones, términos, tablas y mapa conceptual). Una por fuente;
+// la comparten todas las que ven esa fuente. Se genera la primera vez que alguien la abre.
+
+export const studyGuides = pgTable('study_guides', {
+  sourceId: uuid('source_id')
+    .primaryKey()
+    .references(() => sources.id, { onDelete: 'cascade' }),
+  status: text('status').$type<'generating' | 'ready' | 'error'>().notNull(),
+  data: jsonb('data').$type<StudyGuide>(),
+  errorMessage: text('error_message'),
+  startedAt: timestamp('started_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
+export type StudyGuideRow = typeof studyGuides.$inferSelect
