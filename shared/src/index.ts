@@ -682,7 +682,7 @@ export interface AdminPersonDTO extends PresenceDTO {
 }
 
 // ── Presencia (solo el administrador la ve) ─────────────────
-export const PRESENCE_VIEWS = ['home', 'sources', 'guide', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
+export const PRESENCE_VIEWS = ['home', 'sources', 'guide', 'calendar', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
 export type PresenceView = (typeof PRESENCE_VIEWS)[number]
 export const PresencePingSchema = z.object({ view: z.enum(PRESENCE_VIEWS).catch('other') })
 
@@ -702,3 +702,50 @@ export interface AdminPresenceDTO {
 export interface AdminRewardsDTO extends RewardsDTO {
   whatsappConfigured: boolean
 }
+
+// ── Calendario de la U: parciales y recordatorios ────────────
+export interface ExamEventDTO {
+  id: string
+  title: string
+  /** ISO; en los de todo el día, el mediodía de ese día */
+  startsAt: string
+  allDay: boolean
+  /** "calendar" = vino del calendario conectado; "manual" = lo agregó ella */
+  origin: 'calendar' | 'manual'
+  /** Días que faltan (0 = hoy), en la hora de Colombia */
+  daysLeft: number
+  /** Fuentes para practicar (detectadas por el nombre de la materia o elegidas por ella) */
+  sourceIds: string[]
+}
+export interface CalendarDTO {
+  /** Conectado: el enlace se muestra recortado (es privado) */
+  feed: { connected: boolean; hint: string | null; lastSyncedAt: string | null; error: string | null }
+  exams: ExamEventDTO[]
+  /** Datos curiosos cada mañana */
+  dailyFacts: boolean
+}
+export const ConnectCalendarSchema = z.object({
+  url: z
+    .string()
+    .trim()
+    .min(10, 'Pega el enlace del calendario.')
+    .max(2000)
+    .transform((u) => u.replace(/^webcal:\/\//i, 'https://'))
+    .pipe(z.string().url('Ese enlace no se ve bien. Debe empezar por https:// o webcal://')),
+})
+export const ManualExamSchema = z.object({
+  title: z.string().trim().min(2, 'Ponle nombre al parcial.').max(120),
+  /** YYYY-MM-DD */
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Elige la fecha.'),
+  /** HH:MM opcional */
+  time: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .optional(),
+  sourceIds: z.array(z.string().uuid()).max(12).default([]),
+})
+export const UpdateExamSchema = z.object({
+  sourceIds: z.array(z.string().uuid()).max(12).optional(),
+  /** true = "no es un parcial": no se muestra ni avisa */
+  hidden: z.boolean().optional(),
+})

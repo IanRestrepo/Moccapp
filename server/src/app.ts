@@ -15,6 +15,7 @@ import { cronRouter, pushRouter } from './routes/push.js'
 import { pathRouter } from './routes/path.js'
 import { collectionsRouter } from './routes/collections.js'
 import { guideRouter } from './routes/guide.js'
+import { calendarRouter } from './routes/calendar.js'
 
 export function createApp() {
   const app = express()
@@ -37,6 +38,7 @@ export function createApp() {
   app.use('/api/study', studyRouter)
   app.use('/api/path', pathRouter)
   app.use('/api/guide', guideRouter)
+  app.use('/api/calendar', calendarRouter)
   app.use('/api/collections', collectionsRouter)
   app.use('/api/push', pushRouter)
   app.use('/api/rewards', rewardsRouter)

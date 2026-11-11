@@ -18,6 +18,8 @@ import type {
   StudyDeckDTO,
   PathDTO,
   StudyGuideDTO,
+  CalendarDTO,
+  ExamEventDTO,
   GuideTopicQuizDTO,
   PathLessonDTO,
   PathCompleteResponse,
@@ -193,6 +195,18 @@ export const api = {
 
   // Modo estudio
   studyDeck: (sourceIds: string[]) => request<StudyDeckDTO>('GET', `/study?sources=${sourceIds.join(',')}`),
+
+  // Calendario de la U
+  calendar: () => request<CalendarDTO>('GET', '/calendar'),
+  connectCalendar: (url: string) => request<CalendarDTO>('PUT', '/calendar/feed', { url }),
+  disconnectCalendar: () => request<CalendarDTO>('DELETE', '/calendar/feed'),
+  syncCalendar: () => request<CalendarDTO>('POST', '/calendar/sync'),
+  addExam: (body: { title: string; date: string; time?: string; sourceIds: string[] }) =>
+    request<{ exam: ExamEventDTO }>('POST', '/calendar/exams', body).then((r) => r.exam),
+  updateExam: (id: string, body: { sourceIds?: string[]; hidden?: boolean }) =>
+    request<{ exam: ExamEventDTO }>('PATCH', `/calendar/exams/${id}`, body).then((r) => r.exam),
+  deleteExam: (id: string) => request<void>('DELETE', `/calendar/exams/${id}`),
+  setDailyFacts: (on: boolean) => request<{ ok: true }>('PUT', '/calendar/facts', { on }),
 
   // Guía de estudio
   guide: (sourceId: string) => request<StudyGuideDTO>('GET', `/guide/${sourceId}`),

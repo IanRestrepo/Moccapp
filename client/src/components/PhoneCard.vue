@@ -94,7 +94,7 @@ async function enable() {
     <template v-else-if="step === 'push'">
       <p class="flex items-center gap-1.5 text-[13px] font-bold uppercase tracking-wide opacity-70"><PhBell :size="16" weight="bold" /> Avisos</p>
       <h2 class="mt-1 font-display text-[20px] font-extrabold leading-tight">¿Te aviso cuando…?</h2>
-      <p class="mt-1 text-[14px] font-medium leading-snug opacity-75">Tus fuentes estén listas y para no perder tu racha.</p>
+      <p class="mt-1 text-[14px] font-medium leading-snug opacity-75">Días antes de cada parcial, cuando tus fuentes estén listas y para no perder tu racha.</p>
       <BaseButton class="mt-4" size="md" :loading="busy" @click="enable">Activar avisos</BaseButton>
       <p v-if="msg" class="mt-2 text-[13px] font-bold">{{ msg }}</p>
     </template>

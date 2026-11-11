@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhArrowRight, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun } from '@phosphor-icons/vue'
-import { EXAM_LEVEL_LABELS, type ExamHistoryItemDTO, type SourceDTO } from '@vetquiz/shared'
+import { PhArrowRight, PhCalendarDots, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun } from '@phosphor-icons/vue'
+import { EXAM_LEVEL_LABELS, type CalendarDTO, type ExamHistoryItemDTO, type SourceDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import PhoneCard from '@/components/PhoneCard.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
@@ -15,6 +15,7 @@ import { useSound } from '@/composables/useSound'
 import { useTheme } from '@/composables/useTheme'
 import { longDate, relativeDay, scoreBg, scoreText, weekdayShort } from '@/lib/format'
 import { api } from '@/api/client'
+import { countdown, urgency } from '@/lib/exams'
 
 const router = useRouter()
 const ui = useUiStore()
@@ -23,6 +24,10 @@ const statsStore = useStatsStore()
 const sound = useSound()
 const theme = useTheme()
 const loadError = ref<string | null>(null)
+/** Próximo parcial del calendario (no bloquea el inicio si falla) */
+const calendar = ref<CalendarDTO | null>(null)
+const nextExam = computed(() => calendar.value?.exams[0] ?? null)
+onMounted(() => api.calendar().then((c) => (calendar.value = c)).catch(() => {}))
 
 onMounted(async () => {
   try {
@@ -110,6 +115,21 @@ function startExam() {
     </div>
     <p v-if="loadError" class="mt-4 rounded-[20px] bg-pink-tint px-4 py-3 text-[14px] font-semibold">{{ loadError }}</p>
 
+    <!-- Próximo parcial (calendario de la U) -->
+    <RouterLink
+      v-if="nextExam && nextExam.daysLeft <= 21"
+      :to="nextExam.sourceIds[0] ? `/guia/${nextExam.sourceIds[0]}` : '/calendario'"
+      :class="['mt-6 flex items-center gap-3 rounded-card p-4 pl-5 text-on-color transition-transform active:scale-[0.98]', urgency(nextExam)]"
+    >
+      <PhCalendarDots :size="30" weight="fill" class="shrink-0" />
+      <span class="min-w-0 flex-1">
+        <span class="block text-[12.5px] font-bold uppercase tracking-wide opacity-70">{{ countdown(nextExam) }}</span>
+        <span class="block truncate font-display text-[18px] font-extrabold leading-tight">{{ nextExam.title }}</span>
+        <span class="block text-[13px] font-medium opacity-75">{{ nextExam.sourceIds.length ? 'Toca para repasar con tu guía.' : 'Toca para elegir con qué repasar.' }}</span>
+      </span>
+      <PhArrowRight :size="20" weight="bold" />
+    </RouterLink>
+
     <!-- Bloque principal (referencia "Daily challenge") -->
     <section class="relative mt-7 rounded-card-lg bg-lilac p-6 pr-36 text-on-color">
       <h2 class="text-title font-extrabold">Nuevo examen</h2>
@@ -150,6 +170,28 @@ function startExam() {
         <span class="block text-[13.5px] font-medium opacity-75">Sin examen, sin reloj. Pregunta y respuesta.</span>
       </span>
       <PhArrowRight :size="20" weight="bold" />
+    </RouterLink>
+
+    <!-- Calendario de la U -->
+    <RouterLink
+      v-if="calendar"
+      to="/calendario"
+      class="mt-3 flex items-center gap-3 rounded-card bg-surface p-4 pl-5 ring-1 ring-line transition-transform active:scale-[0.98]"
+    >
+      <PhCalendarDots :size="30" weight="duotone" class="shrink-0 text-sky" />
+      <span class="min-w-0 flex-1">
+        <span class="block font-display text-[17px] font-extrabold leading-tight">Mis parciales</span>
+        <span class="block text-[13px] font-medium text-ink-2">
+          {{
+            calendar.exams.length
+              ? `${calendar.exams.length} ${calendar.exams.length === 1 ? 'parcial' : 'parciales'} a la vista · Mocca te avisa antes`
+              : calendar.feed.connected
+                ? 'Calendario conectado · sin parciales a la vista'
+                : 'Conecta tu calendario de la U y Mocca te avisa días antes'
+          }}
+        </span>
+      </span>
+      <PhCaretRight :size="18" weight="bold" class="text-ink-3" />
     </RouterLink>
 
     <!-- Instalar en el celular / activar avisos -->

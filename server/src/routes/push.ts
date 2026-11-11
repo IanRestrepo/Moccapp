@@ -6,7 +6,7 @@ import { isAdmin } from '../lib/access.js'
 import { AppError } from '../lib/errors.js'
 import { currentProfile, displayNameFor } from '../lib/profile.js'
 import { pushEnabled, removeSubscription, saveSubscription, sendPush } from '../services/push.js'
-import { sendDailyReminders } from '../services/reminders.js'
+import { sendDailyReminders, sendMorningNudges } from '../services/reminders.js'
 
 // ── Avisos del celular (requiere acceso) ─────────────────────
 export const pushRouter = Router()
@@ -38,8 +38,18 @@ pushRouter.post('/unsubscribe', async (req, res) => {
 // ── Vercel Cron (antes del candado; lo protege CRON_SECRET) ──
 export const cronRouter = Router()
 
+const checkCron = (auth: string | undefined) => {
+  if (!env.CRON_SECRET || auth !== `Bearer ${env.CRON_SECRET}`) throw new AppError(401, 'UNAUTHORIZED', 'No autorizado.')
+}
+
+/** Noche (~7 p. m.): parciales cercanos o racha */
 cronRouter.get('/daily', async (req, res) => {
-  if (!env.CRON_SECRET || req.get('authorization') !== `Bearer ${env.CRON_SECRET}`)
-    throw new AppError(401, 'UNAUTHORIZED', 'No autorizado.')
+  checkCron(req.get('authorization'))
   res.json({ reminders: await sendDailyReminders() })
+})
+
+/** Mañana (~7 a. m.): día del parcial o dato curioso */
+cronRouter.get('/morning', async (req, res) => {
+  checkCron(req.get('authorization'))
+  res.json({ nudges: await sendMorningNudges() })
 })

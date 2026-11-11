@@ -245,6 +245,8 @@ export const userStats = pgTable(
     lastSeenAt: timestamp('last_seen_at', { withTimezone: true }),
     lastSeenView: text('last_seen_view'),
     lastSeenDevice: text('last_seen_device'),
+    /** Dato curioso cada mañana (push) */
+    dailyFacts: boolean('daily_facts').notNull().default(true),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   // una fila por perfil: 1 = Ash (la de siempre), 2… = invitadas (ver lib/profile.ts)
@@ -383,3 +385,37 @@ export const studyGuides = pgTable('study_guides', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
 export type StudyGuideRow = typeof studyGuides.$inferSelect
+
+// ── calendario de la U ───────────────────────────────────────
+// El enlace iCal privado de cada perfil y los parciales que se encontraron en él (o que agregó a mano).
+
+export const calendarFeeds = pgTable('calendar_feeds', {
+  profile: text('profile').primaryKey(),
+  url: text('url').notNull(),
+  lastSyncedAt: timestamp('last_synced_at', { withTimezone: true }),
+  lastError: text('last_error'),
+})
+
+export const examEvents = pgTable(
+  'exam_events',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    profile: text('profile').notNull(),
+    /** UID del evento en el calendario, o "manual:<id>" */
+    uid: text('uid').notNull(),
+    origin: text('origin').$type<'calendar' | 'manual'>().notNull(),
+    title: text('title').notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    allDay: boolean('all_day').notNull().default(false),
+    sourceIds: jsonb('source_ids').$type<string[]>().notNull().default([]),
+    /** true cuando ella eligió las fuentes: la sincronización ya no las cambia */
+    sourcesLocked: boolean('sources_locked').notNull().default(false),
+    /** "no es un parcial" */
+    hidden: boolean('hidden').notNull().default(false),
+    /** días antes en que ya se avisó (7, 3, 2, 1, 0): para no repetir */
+    notified: jsonb('notified').$type<number[]>().notNull().default([]),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [uniqueIndex('exam_events_profile_uid_uq').on(t.profile, t.uid), index('exam_events_profile_start_idx').on(t.profile, t.startsAt)],
+)
+export type ExamEvent = typeof examEvents.$inferSelect
