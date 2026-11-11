@@ -209,10 +209,10 @@ export function useGuideReader(storageKey: string) {
     else safeSet(`${storageKey}-pos`, String(index.value))
   }
 
+  /** La velocidad nueva aplica desde la frase siguiente: cortar la actual sonaba a "volver a empezar" */
   function cycleRate() {
     rate.value = RATES[(RATES.indexOf(rate.value) + 1) % RATES.length] ?? 1
     safeSet(`${storageKey}-rate`, String(rate.value))
-    if (state.value === 'playing') play()
   }
 
   /** Controles en la pantalla de bloqueo / audífonos, donde el celular los muestre */
