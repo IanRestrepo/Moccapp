@@ -1,143 +1,168 @@
-// Sonido de la escena del examen perfecto, hecho a la medida de la animación (PerfectCelebration.vue):
-//   0,00 s  patitas corriendo (pizzicato rápido que sube)
-//   0,70 s  frenazo y resbalón: silbido que sube con vibrato
-//   1,60 s  ¡pum!: golpe grave + "bonk" de madera + pajaritos de mareo
-//   1,95 s  vuelve de puntitas: cuatro notas suaves de marimba
-//   2,60 s  toma impulso: redoble que sube
-//   3,05 s  EXPLOSIÓN: bombo, platillo y fanfarria de Mocca (arpegio que sube y acorde final con campanitas);
-//           un "boing" en cada salto
+// Música de la escena del examen perfecto (PerfectCelebration.vue): una pieza ORIGINAL para guitarra acústica de
+// cuerdas de nylon, punteada con los dedos, cálida y en registro grave-medio (al estilo de las baladas de guitarra
+// española/fingerstyle). Arpegios en La menor mientras Mocca corre y se resbala, y resuelve luminosa a Do mayor
+// cuando todo estalla. Solo guitarra y un par de golpecitos en la caja.
+//   0,00 s  corre: arpegio de La menor que sube
+//   0,70 s  resbalón: escala menor que baja rodando
+//   1,60 s  ¡pum!: golpe con la palma en la caja de la guitarra + bajo apagado
+//   1,95 s  vuelve de puntitas: Fa mayor 7, muy suave
+//   2,60 s  toma impulso: rasgueo de Sol que crece
+//   3,05 s  EXPLOSIÓN: rasgueo lleno de Do mayor y arpegio Do – Sol/Si – La m – Fa – Do, con la melodía arriba
 // Uso: node scripts/gen-perfect-scene.mjs  →  public/sounds/perfectScene.wav
 import { writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const SR = 32000
-const DUR = 6.4
+const DUR = 7
 const out = new Float32Array(Math.ceil(SR * DUR))
 const TAU = Math.PI * 2
-const note = (n) => 440 * 2 ** ((n - 69) / 12) // número MIDI → Hz
+const hz = (midi) => 440 * 2 ** ((midi - 69) / 12)
 
-/** Suma una voz: fn(t) con t en segundos desde su inicio */
-function add(start, dur, fn, gain = 1) {
-  const i0 = Math.round(start * SR)
-  const n = Math.round(dur * SR)
-  for (let i = 0; i < n && i0 + i < out.length; i++) out[i0 + i] += gain * fn(i / SR, i)
-}
 // semilla fija: el archivo sale igual cada vez
-let seed = 7
+let seed = 23
 const rand = () => ((seed = (seed * 16807) % 2147483647) / 2147483647) * 2 - 1
 
-/** Marimba / pizzicato: ataque seco y caída rápida */
-const pluck = (start, midi, gain = 0.5, decay = 9) => {
-  const f = note(midi)
-  add(start, 0.5, (t) => Math.exp(-t * decay) * (Math.sin(TAU * f * t) + 0.35 * Math.sin(TAU * f * 4 * t) * Math.exp(-t * 30)), gain)
-}
-/** Campanita: parciales inarmónicos, caída larga */
-const bell = (start, midi, gain = 0.25, decay = 4) => {
-  const f = note(midi)
-  add(start, 1.4, (t) => Math.exp(-t * decay) * (Math.sin(TAU * f * t) + 0.5 * Math.sin(TAU * f * 2.76 * t) + 0.25 * Math.sin(TAU * f * 5.4 * t)), gain)
-}
-/** Metal de fanfarria: armónicos de sierra con ataque suave y un poquito de vibrato */
-const brass = (start, midi, dur, gain = 0.3) => {
-  const f = note(midi)
-  add(
-    start,
-    dur + 0.25,
-    (t) => {
-      const env = Math.min(1, t / 0.025) * (t < dur ? 1 : Math.exp(-(t - dur) * 14))
-      const vib = 1 + 0.004 * Math.sin(TAU * 5.5 * t) * Math.min(1, t / 0.3)
-      let s = 0
-      // el brillo se abre al atacar, como una trompeta
-      const bright = 0.55 + 0.45 * Math.exp(-t * 6)
-      for (let h = 1; h <= 7; h++) s += (Math.sin(TAU * f * vib * h * t) / h) * bright ** (h - 1)
-      return env * s
-    },
-    gain,
-  )
-}
-/** Ruido filtrado (paso bajo de un polo) con envolvente */
-const noise = (start, dur, gain, env, cutoff = 0.5) => {
-  let y = 0
-  add(start, dur, (t) => {
-    y += cutoff * (rand() - y)
-    return env(t) * y
-  }, gain)
-}
-/** Tono que se desliza de f0 a f1 */
-const sweep = (start, dur, f0, f1, gain, env, vibrato = 0) => {
-  let phase = 0
-  add(start, dur, (t) => {
-    const k = t / dur
-    const f = f0 * (f1 / f0) ** k * (1 + vibrato * Math.sin(TAU * 11 * t))
-    phase += (TAU * f) / SR
-    return env(t, k) * Math.sin(phase)
-  }, gain)
+/**
+ * Cuerda de nylon (Karplus-Strong afinado): el pulso del dedo da vueltas por una línea de retardo y se apaga solo,
+ * como una cuerda real.
+ *  - retardo con fracción (interpolado) → la nota queda afinada de verdad
+ *  - el pulso es ruido MUY suavizado (yema del dedo, no púa) y pulsado cerca de la boca (sonido redondo)
+ *  - los graves duran más que los agudos, como en una guitarra
+ *  - `ring` = segundos antes de apagarla con el dedo
+ */
+function nylon(start, midi, gain = 0.5, { ring = 2.4, soft = 0.22, t60 } = {}) {
+  const f = hz(midi)
+  const L = SR / f - 0.5 // el filtro del lazo retrasa media muestra
+  const N = Math.ceil(L) + 2
+  const buf = new Float32Array(N)
+  // pulso: ruido suavizado dos veces + "posición del dedo" a 1/5 de la cuerda
+  const exc = new Float32Array(N)
+  let a = 0
+  let b = 0
+  let mean = 0
+  for (let i = 0; i < N; i++) {
+    a += soft * (rand() - a)
+    b += soft * 1.6 * (a - b)
+    exc[i] = b
+    mean += b / N
+  }
+  const pick = Math.max(1, Math.round(N * 0.2))
+  let peak = 1e-6
+  for (let i = 0; i < N; i++) {
+    buf[i] = exc[i] - mean - (exc[(i + N - pick) % N] - mean) * 0.6
+    peak = Math.max(peak, Math.abs(buf[i]))
+  }
+  for (let i = 0; i < N; i++) buf[i] /= peak
+
+  // cuánto dura: graves ~3,2 s, agudos ~1,6 s
+  const decaySecs = t60 ?? Math.max(1.4, 3.4 - (midi - 40) * 0.045)
+  const loss = 10 ** (-3 / (decaySecs * f))
+  const i0 = Math.round(start * SR)
+  const n = Math.round((ring + 0.06) * SR)
+  const mute = Math.round(ring * SR)
+  let w = 0
+  let prev = 0
+  let warm = 0
+  for (let i = 0; i < n && i0 + i < out.length; i++) {
+    // lectura interpolada L muestras atrás
+    let r = w - L
+    while (r < 0) r += N
+    const r0 = Math.floor(r)
+    const frac = r - r0
+    const y = buf[r0 % N] * (1 - frac) + buf[(r0 + 1) % N] * frac
+    buf[w] = loss * 0.5 * (y + prev)
+    prev = y
+    w = (w + 1) % N
+    // la caja redondea el sonido (quita el brillo metálico)
+    warm += 0.42 * (y - warm)
+    // apagado con el dedo al final
+    const env = i < mute ? 1 : Math.max(0, 1 - (i - mute) / (0.06 * SR))
+    out[i0 + i] += gain * env * warm
+  }
 }
 
-// ── 0,00 s: patitas corriendo ──
-for (let i = 0; i < 7; i++) {
-  pluck(0.02 + i * 0.1, 72 + i * 2 + (i % 2 ? 3 : 0), 0.34, 22)
-  noise(0.02 + i * 0.1, 0.05, 0.1, (t) => Math.exp(-t * 90), 0.9)
+/** Rasgueo con el pulgar: de la cuerda grave a la aguda, sin prisa */
+const strum = (start, chord, { gain = 0.42, spread = 0.03, ring = 2.4 } = {}) =>
+  chord.forEach((m, i) => nylon(start + i * spread, m, gain * (1 - i * 0.04), { ring }))
+
+/** Golpe con la palma en la caja de la guitarra: madera grave y corta */
+function knock(start, gain = 0.8) {
+  const i0 = Math.round(start * SR)
+  const n = Math.round(0.28 * SR)
+  let lp = 0
+  for (let i = 0; i < n && i0 + i < out.length; i++) {
+    const t = i / SR
+    lp += 0.12 * (rand() - lp)
+    out[i0 + i] +=
+      gain * (Math.exp(-t * 22) * Math.sin(TAU * 98 * t) + 0.5 * Math.exp(-t * 30) * Math.sin(TAU * 196 * t) + 1.6 * Math.exp(-t * 70) * lp)
+  }
 }
 
-// ── 0,70 s: frenazo y resbalón ──
-noise(0.7, 0.3, 0.16, (t) => Math.exp(-t * 9), 0.35)
-sweep(0.72, 0.82, 380, 1750, 0.3, (t, k) => Math.min(1, t / 0.04) * (1 - k * 0.25), 0.03)
+// notas: Mi2 = 40, La2 = 45, Do3 = 48, Mi3 = 52, La3 = 57, Do4 = 60, Mi4 = 64, La4 = 69, Do5 = 72
+
+// ── 0,00 s: corre (La menor que sube, punteado rápido) ──
+;[45, 52, 57, 60, 64, 69, 72].forEach((m, i) => nylon(0.02 + i * 0.1, m, 0.55 + i * 0.03, { ring: 0.9 }))
+
+// ── 0,70 s: resbalón (escala de La menor que baja rodando, cada vez más rápido) ──
+let t = 0.74
+;[76, 74, 72, 71, 69, 67, 65, 64, 62, 60, 59, 57].forEach((m, i) => {
+  nylon(t, m, 0.5 - i * 0.012, { ring: 0.5 })
+  t += 0.075 - i * 0.0022
+})
 
 // ── 1,60 s: ¡pum! ──
-sweep(1.6, 0.4, 150, 42, 0.95, (t) => Math.exp(-t * 11))
-noise(1.6, 0.18, 0.4, (t) => Math.exp(-t * 28), 0.25)
-pluck(1.62, 55, 0.5, 26)
-// pajaritos de mareo
-;[1.74, 1.84, 1.94].forEach((t0, i) => sweep(t0, 0.07, 2300 + i * 200, 3100 + i * 200, 0.1, (t, k) => Math.sin(Math.PI * k)))
+knock(1.6, 1)
+nylon(1.61, 40, 0.75, { ring: 0.22 })
 
-// ── 1,95 s: vuelve de puntitas ──
-;[60, 64, 67, 71].forEach((m, i) => pluck(2.03 + i * 0.18, m, 0.36, 13))
+// ── 1,95 s: vuelve de puntitas (Fa mayor 7, pianísimo) ──
+;[53, 57, 60, 64].forEach((m, i) => nylon(2.04 + i * 0.17, m, 0.36, { ring: 1.1, soft: 0.16 }))
 
-// ── 2,60 s: toma impulso ──
-sweep(2.6, 0.45, 180, 1100, 0.2, (t, k) => k * k)
-noise(2.6, 0.45, 0.22, (t) => (t / 0.45) ** 2, 0.6)
-for (let i = 0; i < 9; i++) pluck(2.62 + i * 0.047, 48 + i, 0.16 + i * 0.02, 40)
+// ── 2,60 s: toma impulso (Sol, tres rasgueos que crecen) ──
+const G = [43, 47, 50, 55, 59, 67]
+;[0, 0.17, 0.31].forEach((d, i) => strum(2.6 + d, G, { gain: 0.2 + i * 0.1, spread: 0.012, ring: 0.5 }))
 
-// ── 3,05 s: EXPLOSIÓN y fanfarria de Mocca ──
+// ── 3,05 s: EXPLOSIÓN — Do mayor lleno y el arpegio que canta ──
 const B = 3.05
-sweep(B, 0.9, 130, 34, 1.1, (t) => Math.exp(-t * 5))
-noise(B, 1.3, 0.34, (t) => Math.exp(-t * 3.2), 0.95) // platillo
-noise(B, 0.12, 0.5, (t) => Math.exp(-t * 40), 0.3)
-// acorde de golpe (Do mayor)
-;[48, 60, 64, 67].forEach((m) => brass(B, m, 0.16, 0.2))
-// arpegio que sube: sol–do–mi–sol
-;[67, 72, 76, 79].forEach((m, i) => {
-  brass(B + 0.22 + i * 0.115, m, 0.1, 0.26)
-  bell(B + 0.22 + i * 0.115, m + 12, 0.12, 7)
-})
-// acorde final, largo y abierto, que sube medio paso de emoción al cierre (Do → Fa/Do → Do)
-const END = B + 0.72
-;[60, 67, 72, 76, 84].forEach((m, i) => brass(END, m, 0.5, i === 4 ? 0.2 : 0.17))
-;[60, 65, 72, 77, 84].forEach((m) => brass(END + 0.52, m, 0.22, 0.15))
-;[60, 67, 72, 76, 79, 88].forEach((m, i) => brass(END + 0.76, m, 1.15, i === 5 ? 0.16 : 0.17))
-sweep(END + 0.76, 0.7, 110, 40, 0.6, (t) => Math.exp(-t * 6))
-noise(END + 0.76, 1.5, 0.26, (t) => Math.exp(-t * 2.6), 0.95)
-// campanitas que caen como chispas
-const SCALE = [84, 86, 88, 91, 93, 96, 98, 100]
-for (let i = 0; i < 16; i++) bell(END + 0.1 + i * 0.105, SCALE[(i * 5 + (i % 3)) % SCALE.length], 0.085 + 0.04 * ((i + 1) % 2), 5)
-// un "boing" en cada salto (0,64 s por salto)
-for (let j = 0; j < 4; j++) {
-  const t0 = B + j * 0.64 + 0.02
-  sweep(t0, 0.16, 300, 760, 0.1, (t, k) => Math.sin(Math.PI * k) * 0.9, 0.02)
-}
+knock(B, 0.9)
+strum(B, [48, 52, 55, 60, 64, 72], { gain: 0.6, spread: 0.022, ring: 2.6 })
 
-// ── mezcla: limitador suave y desvanecido final ──
-const fadeFrom = out.length - Math.round(SR * 0.35)
+// patrón de dedos (bajo – medio – agudo – medio), una corchea cada 0,15 s, con la melodía en la cuerda aguda
+const STEP = 0.15
+const bars = [
+  { bass: 48, mid: [55, 60], top: 76 }, // Do, melodía Mi
+  { bass: 47, mid: [55, 62], top: 74 }, // Sol/Si, melodía Re
+  { bass: 45, mid: [52, 60], top: 72 }, // La menor, melodía Do
+  { bass: 41, mid: [53, 57], top: 69 }, // Fa, melodía La
+]
+bars.forEach(({ bass, mid, top }, b) => {
+  const at = B + 0.6 + b * 4 * STEP
+  nylon(at, bass, 0.62, { ring: 1.4 })
+  nylon(at, top, 0.56, { ring: 1.3 })
+  nylon(at + STEP, mid[0], 0.36, { ring: 0.9 })
+  nylon(at + 2 * STEP, mid[1], 0.38, { ring: 0.9 })
+  nylon(at + 3 * STEP, mid[0], 0.32, { ring: 0.8 })
+})
+// vuelta a casa: Sol que sube a Do, y el acorde final rodado despacio, que se queda sonando
+const HOME = B + 0.6 + 16 * STEP
+nylon(HOME - 2 * STEP, 71, 0.5, { ring: 0.5 })
+nylon(HOME - STEP, 74, 0.52, { ring: 0.5 })
+knock(HOME, 0.45)
+strum(HOME, [48, 55, 60, 64, 67, 72, 76], { gain: 0.58, spread: 0.045, ring: 3 })
+nylon(HOME + 0.55, 79, 0.42, { ring: 2.4, soft: 0.18 })
+nylon(HOME + 0.9, 84, 0.36, { ring: 2.2, soft: 0.16 })
+
+// ── mezcla: sin distorsión; nivelar y desvanecer el final ──
+const fadeFrom = out.length - Math.round(SR * 0.9)
 let peak = 0
 for (let i = 0; i < out.length; i++) {
-  if (i > fadeFrom) out[i] *= 1 - (i - fadeFrom) / (out.length - fadeFrom)
-  out[i] = Math.tanh(out[i] * 0.9)
+  if (i > fadeFrom) out[i] *= ((out.length - i) / (out.length - fadeFrom)) ** 1.5
   peak = Math.max(peak, Math.abs(out[i]))
 }
-const norm = 0.92 / peak
-
+// solo se redondean los picos (los golpes), para que la guitarra no quede bajita
+const soft = (x) => (Math.abs(x) < 0.65 ? x : Math.sign(x) * (0.65 + 0.35 * Math.tanh((Math.abs(x) - 0.65) / 0.35)))
+const norm = (0.98 / peak) * 1.35
 const data = Buffer.alloc(out.length * 2)
-for (let i = 0; i < out.length; i++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, out[i] * norm)) * 32767), i * 2)
+for (let i = 0; i < out.length; i++) data.writeInt16LE(Math.round(Math.max(-1, Math.min(1, soft(out[i] * norm))) * 32767), i * 2)
 const header = Buffer.alloc(44)
 header.write('RIFF', 0)
 header.writeUInt32LE(36 + data.length, 4)
@@ -153,4 +178,4 @@ header.write('data', 36)
 header.writeUInt32LE(data.length, 40)
 const file = fileURLToPath(new URL('../public/sounds/perfectScene.wav', import.meta.url))
 writeFileSync(file, Buffer.concat([header, data]))
-console.log(`${file} · ${DUR} s · ${((44 + data.length) / 1024).toFixed(0)} KB · pico ${peak.toFixed(2)}`)
+console.log(`sounds/perfectScene.wav · ${DUR} s · ${((44 + data.length) / 1024).toFixed(0)} KB · pico ${peak.toFixed(2)}`)

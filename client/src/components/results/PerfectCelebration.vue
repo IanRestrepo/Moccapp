@@ -90,7 +90,8 @@ async function start() {
     confetti({ particleCount: 45, angle: 60, spread: 60, startVelocity: 52, origin: { x: 0, y: 0.78 }, colors: GOLD })
     confetti({ particleCount: 45, angle: 120, spread: 60, startVelocity: 52, origin: { x: 1, y: 0.78 }, colors: GOLD })
   })
-  later(BOOM * 1000 + 3600, showSummary)
+  // deja sonar el acorde final de la guitarra
+  later(BOOM * 1000 + 3850, showSummary)
 }
 
 function showSummary() {
