@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, watch } from 'vue'
-import { AnimatePresence, motion } from 'motion-v'
+import { motion } from 'motion-v'
 import confetti from 'canvas-confetti'
 import { PhLightning, PhTarget, PhTimer } from '@phosphor-icons/vue'
 import MascotBlob, { type MascotAct, type MascotMood } from '@/components/mascot/MascotBlob.vue'
@@ -169,20 +169,10 @@ const cards = computed(() => [
 </script>
 
 <template>
-  <AnimatePresence>
-    <div v-if="open" class="fixed inset-0 z-[60]" role="dialog" aria-modal="true" aria-label="¡Examen perfecto!">
-      <AnimatePresence mode="wait">
+  <!-- Sin animaciones de "salida": el paso de la escena al resumen es directo, para que nunca se quede a medias -->
+  <div v-if="open" class="fixed inset-0 z-[60] bg-bg" role="dialog" aria-modal="true" aria-label="¡Examen perfecto!">
         <!-- ── 1. Entrada ── -->
-        <motion.div
-          v-if="stage === 'intro' && go"
-          key="intro"
-          class="pc-intro absolute inset-0 overflow-hidden"
-          :initial="{ opacity: 0 }"
-          :animate="{ opacity: 1 }"
-          :exit="{ opacity: 0 }"
-          :transition="{ duration: 0.2 }"
-          @click="skip"
-        >
+        <div v-if="stage === 'intro' && go" key="intro" class="pc-intro pc-in absolute inset-0 overflow-hidden" @click="skip">
           <div class="pc-stage absolute inset-0" :style="{ '--boom': `${BOOM}s` }">
             <!-- cielo de atardecer: estrellitas, sol escondiéndose y nubes -->
             <span v-for="i in 14" :key="`st${i}`" class="pc-star" :style="{ left: `${(i * 37) % 100}%`, top: `${(i * 53) % 30}%`, animationDelay: `${(i % 5) * 0.4}s` }" />
@@ -275,7 +265,7 @@ const cards = computed(() => [
           </div>
           <!-- destello blanco de la explosión -->
           <div class="pc-flash" :style="{ '--boom': `${BOOM}s` }" />
-        </motion.div>
+        </div>
 
         <!-- ── 2. Resumen ── -->
         <motion.div
@@ -350,13 +340,17 @@ const cards = computed(() => [
             </motion.button>
           </div>
         </motion.div>
-      </AnimatePresence>
-    </div>
-  </AnimatePresence>
+  </div>
 </template>
 
 <style scoped>
 /* ── Entrada: todo va por tiempos, alineado con el sonido ── */
+.pc-in {
+  animation: pc-in 0.200s ease-out both;
+}
+@keyframes pc-in {
+  from { opacity: 0; }
+}
 .pc-intro {
   /* atardecer: morado arriba, rosa y durazno hacia el horizonte */
   background: linear-gradient(180deg, #241a52 0%, #4a2f86 22%, #a8559f 40%, #f08fa6 52%, #ffc98f 62%, #ffc98f 100%);
