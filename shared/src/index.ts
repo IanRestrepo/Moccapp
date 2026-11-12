@@ -645,8 +645,47 @@ export const PushSubscribeSchema = z.object({
 })
 
 // ── Mensajitos de Ian (Mocca los dice) ──────────────────────
-export const MOCCA_MESSAGE_MOODS = ['happy', 'celebrating', 'proud', 'amazed'] as const
-export type MoccaMessageMood = (typeof MOCCA_MESSAGE_MOODS)[number]
+/** Todas las caras de Mocca (el brief de personaje). El dibujo de cada una vive en el cliente (MascotBlob). */
+export const MOCCA_MOODS = [
+  'happy', 'thinking', 'surprised', 'celebrating', 'sad', 'amazed', 'proud', 'angry', 'sleepy', 'excited', 'nervous',
+  'confused', 'curious', 'shy', 'inlove', 'anxious', 'relieved', 'motivated', 'relaxed', 'bored', 'eager', 'hungry',
+  'scared', 'confident', 'delighted',
+] as const
+export type MoccaMood = (typeof MOCCA_MOODS)[number]
+/** Rareza de cada Mocca en la colección (los sobres) */
+export type MoccaRarity = 'normal' | 'special' | 'legendary'
+export const MOCCA_RARITY_LABEL: Record<MoccaRarity, string> = { normal: 'Normal', special: 'Especial', legendary: 'Legendaria' }
+export const MOCCA_INFO: Record<MoccaMood, { label: string; rarity: MoccaRarity }> = {
+  happy: { label: 'Feliz', rarity: 'normal' },
+  thinking: { label: 'Pensando', rarity: 'normal' },
+  surprised: { label: 'Sorprendida', rarity: 'normal' },
+  sad: { label: 'Triste', rarity: 'normal' },
+  sleepy: { label: 'Adormilada', rarity: 'normal' },
+  nervous: { label: 'Nerviosa', rarity: 'normal' },
+  confused: { label: 'Confundida', rarity: 'normal' },
+  anxious: { label: 'Ansiosa', rarity: 'normal' },
+  relieved: { label: 'Aliviada', rarity: 'normal' },
+  relaxed: { label: 'Relajada', rarity: 'normal' },
+  bored: { label: 'Aburrida', rarity: 'normal' },
+  hungry: { label: 'Hambrienta', rarity: 'normal' },
+  scared: { label: 'Miedosa', rarity: 'normal' },
+  celebrating: { label: 'Celebrando', rarity: 'special' },
+  excited: { label: 'Emocionada', rarity: 'special' },
+  curious: { label: 'Curiosa', rarity: 'special' },
+  motivated: { label: 'Motivada', rarity: 'special' },
+  confident: { label: 'Segura', rarity: 'special' },
+  delighted: { label: 'Sorpresa feliz', rarity: 'special' },
+  eager: { label: 'Con ganas', rarity: 'special' },
+  shy: { label: 'Tímida', rarity: 'special' },
+  angry: { label: 'Enojada', rarity: 'special' },
+  amazed: { label: 'Asombrada', rarity: 'legendary' },
+  proud: { label: 'Orgullosa', rarity: 'legendary' },
+  inlove: { label: 'Enamorada', rarity: 'legendary' },
+}
+
+/** Los mensajitos pueden llevar cualquier cara */
+export const MOCCA_MESSAGE_MOODS = MOCCA_MOODS
+export type MoccaMessageMood = MoccaMood
 
 export const SendMoccaMessageSchema = z.object({
   /** Siempre Ash (la dueña): el servidor rechaza cualquier otra */

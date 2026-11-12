@@ -42,6 +42,10 @@ const mood = ref<MascotMood>('happy')
 /** fase de la escena, para el polvo del frenazo y el golpe */
 const beat = ref<'run' | 'slip' | 'crash' | 'back' | 'boom'>('run')
 
+// los efectos cortos quedan cargados desde ya
+sound.ready('whoosh')
+sound.ready('thud')
+
 /**
  * La música de la escena la entrega el servidor (no viene con la app). Es una canción larga: se pide su dirección
  * al entrar a resultados, pero solo se empieza a cargar si de verdad sale la escena. La escena espera a que pueda
@@ -67,6 +71,8 @@ async function start() {
   await Promise.race([music.then(() => (hasMusic ? sound.ready('perfectScene') : undefined)), new Promise((r) => setTimeout(r, 2000))])
   if (!props.open || stage.value !== 'intro') return
   go.value = true
+  // efectos de Mocca encima de la música: el viento al pasar corriendo…
+  sound.play('whoosh')
   if (hasMusic) sound.play('perfectScene')
   // sin música guardada: el efecto de siempre, con su golpe grave justo en la explosión
   else later(BOOM * 1000 - 460, () => sound.play('perfect'))
@@ -78,10 +84,14 @@ async function start() {
     act.value = 'slip'
     mood.value = 'surprised'
     beat.value = 'slip'
+    // …y otra vez al resbalarse
+    sound.play('whoosh')
   })
   // ¡pum! contra el borde
   later(1600, () => {
     beat.value = 'crash'
+    // el golpe contra el borde
+    sound.play('thud')
     confetti({ particleCount: 16, angle: 180, spread: 70, startVelocity: 30, gravity: 0.9, ticks: 70, origin: { x: 1, y: 0.44 }, shapes: ['star'], colors: ['#ffffff', '#ffcf3f'], scalar: 1.1 })
   })
   // vuelve caminando
@@ -98,6 +108,8 @@ async function start() {
     act.value = 'jump'
     mood.value = 'amazed'
     beat.value = 'boom'
+    // con música, el golpe de la explosión lo refuerza; sin música ya viene en el efecto de siempre
+    if (hasMusic) sound.play('thud')
     confetti({ particleCount: 90, spread: 360, startVelocity: 46, gravity: 0.55, ticks: 190, origin: { x: 0.5, y: 0.4 }, shapes: ['star'], colors: GOLD, scalar: 1.25 })
     confetti({ particleCount: 50, spread: 360, startVelocity: 26, gravity: 0.4, ticks: 150, origin: { x: 0.5, y: 0.4 }, shapes: ['circle'], colors: ['#ab90f7', '#7fb4ff', '#ff86c3'], scalar: 0.7 })
   })

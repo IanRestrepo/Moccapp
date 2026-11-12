@@ -100,6 +100,16 @@ const sounds = {
     ],
     0.2,
   ),
+  // escena del examen perfecto: el viento cuando Mocca pasa corriendo o se resbala…
+  whoosh: render([{ at: 0, freq: 1, dur: 0.55, wave: 'whoosh', gain: 0.5 }], 0.05),
+  // …y el golpe grave cuando se estrella y cuando todo estalla (bombo que cae de tono + clic)
+  thud: render(
+    [
+      { at: 0, freq: 92, glide: 38, dur: 0.55, gain: 0.85, decay: 6 },
+      { at: 0, freq: 1, dur: 0.05, wave: 'noise', gain: 0.18, decay: 30 },
+    ],
+    0.05,
+  ),
   // cada tarjeta del resumen al aparecer
   pop: render([
     { at: 0, freq: 520, glide: 880, dur: 0.07, wave: 'sine', gain: 0.35, decay: 5 },
@@ -136,7 +146,10 @@ const sounds = {
 }
 
 await mkdir(out, { recursive: true })
+// `node scripts/gen-sounds.mjs whoosh thud` regenera solo esos (el ruido es aleatorio: los demás cambiarían un poquito)
+const only = process.argv.slice(2)
 for (const [name, samples] of Object.entries(sounds)) {
+  if (only.length && !only.includes(name)) continue
   await writeFile(path.join(out, `${name}.wav`), wav(samples))
   console.log(`${name}.wav  ${(samples.length / RATE).toFixed(2)} s`)
 }

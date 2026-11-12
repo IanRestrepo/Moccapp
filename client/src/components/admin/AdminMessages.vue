@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { motion } from 'motion-v'
 import { PhBellRinging, PhChecks, PhClock, PhPaperPlaneTilt } from '@phosphor-icons/vue'
-import { MOCCA_MESSAGE_MOODS, type AdminPersonDTO, type MoccaMessageMood, type SentMoccaMessageDTO } from '@vetquiz/shared'
+import { MOCCA_INFO, MOCCA_MESSAGE_MOODS, type AdminPersonDTO, type MoccaMessageMood, type SentMoccaMessageDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import ConfirmDialog from '@/components/ui/ConfirmDialog.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
@@ -27,7 +27,6 @@ const confirming = ref(false)
 const sending = ref(false)
 const sent = ref<SentMoccaMessageDTO[]>([])
 
-const MOOD_LABEL: Record<MoccaMessageMood, string> = { happy: 'Feliz', celebrating: 'Celebrando', proud: 'Orgullosa', amazed: 'Wow' }
 const person = computed(() => props.people.find((p) => p.profile === to.value))
 const nameOf = (profile: string) => props.people.find((p) => p.profile === profile)?.name.split(' ')[0] ?? profile
 
@@ -96,18 +95,18 @@ const when = (iso: string) => {
         </div>
       </div>
 
-      <!-- cara de Mocca -->
-      <div class="flex gap-1.5" role="radiogroup" aria-label="Cara de Mocca">
+      <!-- cara de Mocca: las 25 -->
+      <div class="grid max-h-[232px] grid-cols-5 gap-1.5 overflow-y-auto rounded-[16px] p-0.5" role="radiogroup" aria-label="Cara de Mocca">
         <button
           v-for="m in MOCCA_MESSAGE_MOODS"
           :key="m"
           role="radio"
           :aria-checked="mood === m"
-          :class="['flex flex-1 flex-col items-center rounded-[14px] py-1.5 text-[11.5px] font-bold', mood === m ? 'bg-lilac-tint ring-2 ring-lilac' : 'bg-surface-2']"
+          :class="['flex flex-col items-center rounded-[14px] px-0.5 py-1.5 text-[10.5px] font-bold leading-tight', mood === m ? 'bg-lilac-tint ring-2 ring-lilac' : 'bg-surface-2']"
           @click="mood = m"
         >
           <MascotBlob :mood="m" :size="34" />
-          {{ MOOD_LABEL[m] }}
+          {{ MOCCA_INFO[m].label }}
         </button>
       </div>
 

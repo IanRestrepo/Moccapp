@@ -4,7 +4,7 @@ import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 
 /** perfectScene: la música de la escena del examen perfecto. No viene en la app: la entrega el servidor (setSource) */
-export type SoundName = 'tap' | 'select' | 'correct' | 'wrong' | 'tick' | 'finish' | 'perfect' | 'pop' | 'perfectScene'
+export type SoundName = 'tap' | 'select' | 'correct' | 'wrong' | 'tick' | 'finish' | 'perfect' | 'pop' | 'perfectScene' | 'whoosh' | 'thud'
 
 const readPref = () => {
   try {
@@ -36,7 +36,7 @@ function howl(name: SoundName): Howl {
       src: [url ?? `/sounds/${name}.wav`],
       // lo que da el servidor es música larga: suena mientras se descarga, sin bajarla entera primero
       ...(url ? { format: ['m4a'], html5: true } : {}),
-      volume: name === 'tick' ? 0.35 : name === 'perfect' || name === 'perfectScene' ? 0.85 : 0.6,
+      volume: name === 'tick' ? 0.35 : name === 'perfect' || name === 'perfectScene' || name === 'thud' ? 0.85 : name === 'whoosh' ? 0.75 : 0.6,
       preload: true,
     })
     cache.set(name, h)

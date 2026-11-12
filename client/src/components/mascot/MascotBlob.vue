@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import type { MoccaMood } from '@vetquiz/shared'
 
 /**
  * Mocca, redibujada: cabeza y cuerpo separados, mechones de pelo en cachetes y pecho, bracitos, patas con deditos
@@ -9,9 +10,10 @@ import { computed } from 'vue'
  */
 /**
  * happy (inicio) · thinking (generando) · surprised (poco tiempo) · celebrating (nota ≥ 3.0) · sad (nota baja)
- * amazed (examen perfecto, entrada: ojos blancos que brillan, pose de poder) · proud (examen perfecto, resumen: gafas de sol y medalla de oro)
+ * amazed (examen perfecto, entrada: ojos de estrella blancos que brillan, pose de poder) · proud (examen perfecto, resumen: gafas de sol y medalla de oro)
  */
-export type MascotMood = 'happy' | 'thinking' | 'surprised' | 'celebrating' | 'sad' | 'amazed' | 'proud'
+/** Las 25 caras están listadas en shared (MOCCA_MOODS): aquí está el dibujo de cada una */
+export type MascotMood = MoccaMood
 /**
  * Acciones de cuerpo entero (para escenas, como la del examen perfecto). Deforman el dibujo completo como en los
  * dibujos animados: se inclina al correr, se estira al saltar y se aplasta al caer.
@@ -34,30 +36,78 @@ const BLUSH = '#F28FA0'
 const GOLD = '#FFCF3F'
 const GOLD_DEEP = '#E0A400'
 
-const m = computed(() => props.mood)
-/** brazos: grados de giro desde "abajo" (izq., der.) según la pose */
-const arms = computed<[number, number]>(
-  () =>
-    (
-      {
-        happy: [8, -8],
-        thinking: [6, 128],
-        surprised: [52, -52],
-        celebrating: [128, -128],
-        sad: [2, -2],
-        amazed: [138, -138],
-        proud: [34, -34],
-      } as Record<MascotMood, [number, number]>
-    )[m.value],
-)
+/**
+ * Cada ánimo es una combinación de piezas: ojos, párpados, mirada, boca, pose de brazos, cejas, orejas, cola,
+ * movimiento y un accesorio. Los 7 primeros además tienen ajustes propios en el CSS (.mocca--feliz, etc.).
+ */
+type Eyes = 'open' | 'laugh' | 'white' | 'glow' | 'shades' | 'closed' | 'stars' | 'hearts' | 'scared'
+type Mouth =
+  | 'smile' | 'smirk' | 'hmm' | 'o' | 'grin' | 'frown' | 'gritted' | 'yawn' | 'wavy' | 'slant' | 'cat' | 'none'
+  | 'puff' | 'flat' | 'drool' | 'tongue' | 'scream' | 'smileO'
+type Extra =
+  | 'anger' | 'zzz' | 'sparkles' | 'sweat' | 'question' | 'lens' | 'hearts' | 'lines' | 'puff' | 'spark1' | 'notes'
+  | 'cutlery' | 'bone' | 'shiver' | 'bangs'
+interface Look {
+  eyes: Eyes
+  /** párpado sobre los ojos abiertos */
+  lid?: 'sad' | 'angry' | 'firm' | 'half'
+  look?: 'up' | 'side' | 'down'
+  mouth: Mouth
+  /** brazos: grados de giro desde "abajo" (izq., der.) */
+  arms: [number, number]
+  /** cejas: giro y subida de la izquierda, giro y subida de la derecha */
+  brows?: [number, number, number, number]
+  /** orejas: giro de la izquierda y de la derecha (negativo/positivo = hacia afuera) */
+  ears?: [number, number]
+  tail?: 'fast' | 'slow' | 'still' | 'down'
+  anim?: 'bounce' | 'tremble' | 'sway' | 'nod' | 'shake' | 'pump'
+  /** cabeza ladeada, en grados */
+  tilt?: number
+  /** tamaño del sonrojo (1 = normal) */
+  blush?: number
+  extra?: Extra
+}
+const LOOKS: Record<MascotMood, Look> = {
+  happy: { eyes: 'open', mouth: 'smile', arms: [8, -8] },
+  thinking: { eyes: 'open', mouth: 'hmm', arms: [6, 128] },
+  surprised: { eyes: 'white', mouth: 'o', arms: [52, -52] },
+  celebrating: { eyes: 'laugh', mouth: 'smile', arms: [128, -128] },
+  sad: { eyes: 'open', lid: 'sad', mouth: 'frown', arms: [2, -2] },
+  amazed: { eyes: 'glow', mouth: 'grin', arms: [138, -138] },
+  proud: { eyes: 'shades', mouth: 'smirk', arms: [34, -34] },
+
+  angry: { eyes: 'open', lid: 'angry', mouth: 'gritted', arms: [26, -26], brows: [24, 5, -24, 5], ears: [-16, 16], tail: 'still', anim: 'shake', extra: 'anger' },
+  sleepy: { eyes: 'closed', mouth: 'yawn', arms: [4, -4], brows: [-8, -2, 8, -2], ears: [-26, 26], tail: 'still', anim: 'nod', extra: 'zzz' },
+  excited: { eyes: 'stars', mouth: 'smile', arms: [150, -150], brows: [0, -6, 0, -6], tail: 'fast', anim: 'bounce', extra: 'sparkles' },
+  nervous: { eyes: 'open', look: 'side', mouth: 'wavy', arms: [-22, 22], brows: [-18, -3, 18, -3], ears: [-10, 10], tail: 'still', anim: 'tremble', extra: 'sweat' },
+  confused: { eyes: 'open', look: 'up', mouth: 'slant', arms: [6, -6], brows: [-8, -9, 14, 2], tilt: 9, tail: 'slow', extra: 'question' },
+  curious: { eyes: 'open', mouth: 'cat', arms: [6, 168], brows: [0, -5, 0, -5], ears: [6, -6], tail: 'fast', extra: 'lens' },
+  shy: { eyes: 'closed', mouth: 'none', arms: [-139, 139], brows: [-10, -2, 10, -2], ears: [-18, 18], blush: 1.55, tail: 'slow', anim: 'sway' },
+  inlove: { eyes: 'hearts', mouth: 'smile', arms: [-34, 34], brows: [0, -6, 0, -6], blush: 1.4, tail: 'fast', extra: 'hearts' },
+  anxious: { eyes: 'open', look: 'side', mouth: 'none', arms: [4, 139], brows: [-20, -3, 20, -3], ears: [-12, 12], tail: 'still', anim: 'tremble', extra: 'lines' },
+  relieved: { eyes: 'closed', mouth: 'puff', arms: [6, -6], brows: [-10, -5, 10, -5], tail: 'slow', extra: 'puff' },
+  motivated: { eyes: 'open', lid: 'firm', mouth: 'smirk', arms: [150, -24], brows: [16, 3, -16, 3], tail: 'fast', anim: 'pump', extra: 'spark1' },
+  relaxed: { eyes: 'closed', mouth: 'cat', arms: [6, -6], ears: [-8, 8], tail: 'slow', anim: 'sway', extra: 'notes' },
+  bored: { eyes: 'open', lid: 'half', look: 'side', mouth: 'flat', arms: [4, -176], tilt: 7, ears: [-16, 16], tail: 'still' },
+  eager: { eyes: 'stars', mouth: 'drool', arms: [84, -84], tail: 'fast', anim: 'bounce', extra: 'cutlery' },
+  hungry: { eyes: 'laugh', mouth: 'tongue', arms: [8, -8], tail: 'fast', extra: 'bone' },
+  scared: { eyes: 'scared', mouth: 'scream', arms: [124, -124], brows: [-20, -8, 20, -8], ears: [-30, 30], tail: 'down', anim: 'tremble', extra: 'shiver' },
+  confident: { eyes: 'closed', mouth: 'smirk', arms: [34, -34], brows: [8, -2, -8, -2], tilt: -4, tail: 'slow', extra: 'spark1' },
+  delighted: { eyes: 'white', mouth: 'smileO', arms: [70, -70], brows: [0, -10, 0, -10], tail: 'fast', anim: 'bounce', extra: 'bangs' },
+}
+const look = computed(() => LOOKS[props.mood])
+const arms = computed(() => look.value.arms)
+const gaze = computed(() => ({ up: 'translate(3px, -4px)', side: 'translate(4.500px, 1px)', down: 'translate(0, 4px)' })[look.value.look ?? 'up'])
+const PINK = '#FF6B95'
+const BLUE = '#7FB4FF'
 </script>
 
 <template>
-  <svg :width="size" :height="size * 1.08" viewBox="0 0 240 260" role="img" :aria-label="label ?? 'Mocca'" :class="['mocca overflow-visible', `mocca--${mood}`, act && `mocca--act-${act}`]">
+  <svg :width="size" :height="size * 1.08" viewBox="0 0 240 260" role="img" :aria-label="label ?? 'Mocca'" :class="['mocca overflow-visible', `mocca--${mood}`, look.anim && `mocca-anim-${look.anim}`, look.tail && `mocca-tail-${look.tail}`, act && `mocca--act-${act}`]">
     <ellipse cx="120" cy="248" rx="62" ry="8" :fill="LINE" opacity="0.14" class="mocca-shadow" />
 
     <!-- destellos de fiesta / orgullo -->
-    <g v-if="mood === 'celebrating' || mood === 'proud'" class="mocca-sparkles" :stroke="LINE" stroke-width="3" stroke-linejoin="round">
+    <g v-if="mood === 'celebrating' || mood === 'proud' || look.extra === 'sparkles'" class="mocca-sparkles" :stroke="LINE" stroke-width="3" stroke-linejoin="round">
       <path d="M22 84c1.6 9 5.2 12.6 14 14-8.8 1.6-12.4 5-14 14-1.6-9-5.2-12.4-14-14 8.8-1.4 12.4-5 14-14z" :fill="mood === 'proud' ? 'var(--vq-mint)' : 'var(--vq-yellow)'" />
       <path d="M218 60c1.2 7 4 9.800 11 11-7 1.200-9.800 4-11 11-1.200-7-4-9.800-11-11 7-1.200 9.800-4 11-11z" :fill="mood === 'proud' ? 'var(--vq-yellow)' : 'var(--vq-pink)'" />
       <circle cx="226" cy="132" r="5.5" fill="var(--vq-sky)" />
@@ -69,7 +119,79 @@ const arms = computed<[number, number]>(
       <circle cx="222" cy="42" r="10" />
     </g>
 
+    <!-- accesorios de cada ánimo (trazo doble: se leen en fondo claro y oscuro) -->
+    <g v-if="look.extra === 'anger'" class="mocca-pulse" fill="none" stroke-linecap="round">
+      <path d="M190 40q9 2 9 11M214 40q-9 2-9 11M190 68q9-2 9-11M214 68q-9-2-9-11" :stroke="LINE" stroke-width="10" />
+      <path d="M190 40q9 2 9 11M214 40q-9 2-9 11M190 68q9-2 9-11M214 68q-9-2-9-11" stroke="#F0454B" stroke-width="5" />
+    </g>
+    <g v-if="look.extra === 'zzz'" class="mocca-bubbles" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M186 50h16l-16 18h16M210 22h11l-11 13h11" :stroke="LINE" stroke-width="9" />
+      <path d="M186 50h16l-16 18h16M210 22h11l-11 13h11" stroke="#fff" stroke-width="4" />
+    </g>
+    <g v-if="look.extra === 'question'" class="mocca-bubbles" fill="none" stroke-linecap="round">
+      <path d="M194 40c0-11 8-16 16-16s15 5 15 14c0 11-13 11-13 21" :stroke="LINE" stroke-width="10" />
+      <path d="M194 40c0-11 8-16 16-16s15 5 15 14c0 11-13 11-13 21" stroke="#fff" stroke-width="4.500" />
+      <circle cx="212" cy="73" r="5.500" fill="#fff" :stroke="LINE" stroke-width="3" />
+    </g>
+    <g v-if="look.extra === 'bangs'" class="mocca-pulse" stroke-linecap="round">
+      <path d="M202 22l-5 28M224 30l-9 26" fill="none" :stroke="LINE" stroke-width="12" />
+      <path d="M202 22l-5 28M224 30l-9 26" fill="none" :stroke="GOLD" stroke-width="6" />
+      <circle cx="195" cy="64" r="5.500" :fill="GOLD" :stroke="LINE" stroke-width="3" />
+      <circle cx="211" cy="69" r="5.500" :fill="GOLD" :stroke="LINE" stroke-width="3" />
+    </g>
+    <g v-if="look.extra === 'hearts'" class="mocca-hearts" :fill="PINK" :stroke="LINE" stroke-width="3" stroke-linejoin="round">
+      <path d="M204 62c-13-9-16-16-13-21 3-5 10-5 13 1 3-6 10-6 13-1 3 5 0 12-13 21z" />
+      <path d="M224 30c-8-6-10-10-8-13 2-3 6-3 8 1 2-4 6-4 8-1 2 3 0 7-8 13z" />
+      <path d="M186 28c-6-4-7-7-6-9 1-2 4-2 6 0 2-2 5-2 6 0 1 2 0 5-6 9z" />
+    </g>
+    <g v-if="look.extra === 'notes'" class="mocca-bubbles" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M196 62V34l18-5v26" fill="none" :stroke="LINE" stroke-width="9" />
+      <path d="M196 62V34l18-5v26" fill="none" stroke="#fff" stroke-width="4" />
+      <ellipse cx="190" cy="63" rx="7.500" ry="6" fill="#fff" :stroke="LINE" stroke-width="3" />
+      <ellipse cx="208" cy="56" rx="7.500" ry="6" fill="#fff" :stroke="LINE" stroke-width="3" />
+    </g>
+    <g v-if="look.extra === 'bone'" class="mocca-bubbles">
+      <circle cx="186" cy="74" r="5" fill="#fff" :stroke="LINE" stroke-width="3.500" />
+      <ellipse cx="208" cy="42" rx="27" ry="21" fill="#fff" :stroke="LINE" stroke-width="3.500" />
+      <g :fill="GOLD" :stroke="LINE" stroke-width="3" stroke-linejoin="round">
+        <path d="M196 38a5 5 0 1 1 7-6l10 8a5 5 0 1 1 7 6 5 5 0 1 1-7 6l-10-8a5 5 0 1 1-7-6z" />
+      </g>
+    </g>
+    <g v-if="look.extra === 'shiver'" class="mocca-pulse" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M36 70l-7 9 7 9-7 9M204 70l7 9-7 9 7 9" :stroke="LINE" stroke-width="9" />
+      <path d="M36 70l-7 9 7 9-7 9M204 70l7 9-7 9 7 9" stroke="#fff" stroke-width="4" />
+    </g>
+    <g v-if="look.extra === 'lines'" class="mocca-pulse" fill="none" stroke-linecap="round">
+      <path d="M190 44l8-12M202 58l13-7M206 76h14" :stroke="LINE" stroke-width="9" />
+      <path d="M190 44l8-12M202 58l13-7M206 76h14" stroke="#fff" stroke-width="4" />
+    </g>
+    <g v-if="look.extra === 'puff'" class="mocca-puff" fill="#fff" :stroke="LINE" stroke-width="3.500">
+      <circle cx="172" cy="152" r="7" />
+      <circle cx="186" cy="146" r="10" />
+      <circle cx="199" cy="153" r="7.500" />
+    </g>
+    <path
+      v-if="look.extra === 'spark1'"
+      class="mocca-sparkles"
+      d="M208 44c1.600 9 5.200 12.600 14 14-8.800 1.600-12.400 5-14 14-1.600-9-5.200-12.400-14-14 8.800-1.400 12.400-5 14-14z"
+      fill="var(--vq-yellow)"
+      :stroke="LINE"
+      stroke-width="3"
+      stroke-linejoin="round"
+    />
+
     <g class="mocca-all">
+      <!-- con ganas: tenedor y cuchara, bien parados -->
+      <g v-if="look.extra === 'cutlery'" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M45 178V136" fill="none" :stroke="LINE" stroke-width="10" />
+        <path d="M45 178V136" fill="none" stroke="#D9DEE8" stroke-width="5" />
+        <path d="M35 108v18q0 10 10 10t10-10v-18" fill="#D9DEE8" :stroke="LINE" stroke-width="3.500" />
+        <path d="M41.500 110v14M48.500 110v14" fill="none" :stroke="LINE" stroke-width="3" />
+        <path d="M195 178V138" fill="none" :stroke="LINE" stroke-width="10" />
+        <path d="M195 178V138" fill="none" stroke="#D9DEE8" stroke-width="5" />
+        <ellipse cx="195" cy="122" rx="11" ry="15" fill="#D9DEE8" :stroke="LINE" stroke-width="3.500" />
+        <path d="M190 114q2-5 6-6" fill="none" stroke="#fff" stroke-width="2.500" />
+      </g>
       <!-- cola -->
       <g class="mocca-tail">
         <path
@@ -137,13 +259,13 @@ const arms = computed<[number, number]>(
       </g>
 
       <!-- cabeza (orejas detrás) -->
-      <g class="mocca-head">
-        <g class="mocca-ear mocca-ear--l">
+      <g class="mocca-head" :style="look.tilt ? { rotate: `${look.tilt}deg` } : undefined">
+        <g class="mocca-ear mocca-ear--l" :style="look.ears ? { rotate: `${look.ears[0]}deg` } : undefined">
           <path d="M66 92C50 66 44 34 52 12c3-8 12-9 18-3 20 18 36 40 44 60z" :fill="COAT" :stroke="LINE" stroke-width="5" stroke-linejoin="round" />
           <path d="M68 78C58 58 55 38 59 24c15 13 27 29 34 44z" :fill="EAR_IN" />
           <path d="M64 44q4 12 12 22" fill="none" :stroke="BLUSH" stroke-width="3" stroke-linecap="round" opacity="0.7" />
         </g>
-        <g class="mocca-ear mocca-ear--r">
+        <g class="mocca-ear mocca-ear--r" :style="look.ears ? { rotate: `${look.ears[1]}deg` } : undefined">
           <path d="M174 92c16-26 22-58 14-80-3-8-12-9-18-3-20 18-36 40-44 60z" :fill="COAT" :stroke="LINE" stroke-width="5" stroke-linejoin="round" />
           <path d="M172 78c10-20 13-40 9-54-15 13-27 29-34 44z" :fill="EAR_IN" />
           <path d="M176 44q-4 12-12 22" fill="none" :stroke="BLUSH" stroke-width="3" stroke-linecap="round" opacity="0.7" />
@@ -165,22 +287,38 @@ const arms = computed<[number, number]>(
         <path d="M120 112c20 0 34 9 36 22 2 14-13 24-36 24s-38-10-36-24c2-13 16-22 36-22z" :fill="TAN" />
         <path d="M92 146c8 8 17 11 28 11s20-3 28-11c-5 9-15 13-28 13s-23-4-28-13z" :fill="TAN_DARK" opacity="0.55" />
         <!-- cejitas -->
-        <g v-if="mood !== 'proud'" :fill="TAN" class="mocca-brows">
-          <ellipse class="mocca-brow mocca-brow--l" cx="96" cy="80" rx="8" ry="5.500" />
-          <ellipse class="mocca-brow mocca-brow--r" cx="144" cy="80" rx="8" ry="5.500" />
+        <g v-if="look.eyes !== 'shades' && look.eyes !== 'glow'" :fill="TAN" class="mocca-brows">
+          <ellipse
+            class="mocca-brow mocca-brow--l"
+            cx="96"
+            cy="80"
+            rx="8"
+            ry="5.500"
+            :style="look.brows ? { transform: `translateY(${look.brows[1]}px) rotate(${look.brows[0]}deg)` } : undefined"
+          />
+          <ellipse
+            class="mocca-brow mocca-brow--r"
+            cx="144"
+            cy="80"
+            rx="8"
+            ry="5.500"
+            :style="look.brows ? { transform: `translateY(${look.brows[3]}px) rotate(${look.brows[2]}deg)` } : undefined"
+          />
         </g>
         <!-- cachetes -->
-        <ellipse cx="76" cy="130" rx="9" ry="5.500" :fill="BLUSH" opacity="0.85" />
-        <ellipse cx="164" cy="130" rx="9" ry="5.500" :fill="BLUSH" opacity="0.85" />
+        <ellipse cx="76" cy="130" :rx="9 * (look.blush ?? 1)" :ry="5.500 * (look.blush ?? 1)" :fill="BLUSH" opacity="0.85" />
+        <ellipse cx="164" cy="130" :rx="9 * (look.blush ?? 1)" :ry="5.500 * (look.blush ?? 1)" :fill="BLUSH" opacity="0.85" />
+        <!-- gota de sudor -->
+        <path v-if="look.extra === 'sweat'" class="mocca-sweat" d="M62 70c4 8 8 12 8 17a8 8 0 0 1-16 0c0-5 4-9 8-17z" :fill="BLUE" :stroke="LINE" stroke-width="3.500" stroke-linejoin="round" />
 
         <!-- ojos -->
         <g class="mocca-eyes">
           <!-- celebrando: ojitos cerrados de risa -->
-          <g v-if="mood === 'celebrating'" fill="none" :stroke="LINE" stroke-width="5.500" stroke-linecap="round">
+          <g v-if="look.eyes === 'laugh'" fill="none" :stroke="LINE" stroke-width="5.500" stroke-linecap="round">
             <path d="M86 104q10-14 20 0M134 104q10-14 20 0" />
           </g>
           <!-- sorprendida: ojos blancos grandes con pupila pequeña -->
-          <g v-else-if="mood === 'surprised'">
+          <g v-else-if="look.eyes === 'white'">
             <ellipse cx="96" cy="100" rx="13" ry="15" fill="#fff" :stroke="LINE" stroke-width="4" />
             <ellipse cx="144" cy="100" rx="13" ry="15" fill="#fff" :stroke="LINE" stroke-width="4" />
             <circle cx="98" cy="102" r="6" :fill="LINE" />
@@ -189,27 +327,52 @@ const arms = computed<[number, number]>(
             <circle cx="144" cy="100" r="1.800" fill="#fff" />
           </g>
           <!-- asombrada (examen perfecto): ojos completamente blancos que brillan, con destellos -->
-          <g v-else-if="mood === 'amazed'">
-            <g class="mocca-glow">
-              <path d="M82 96c0-9 6-15 14-15s14 6 14 15c0 10-6 17-14 17s-14-7-14-17z" fill="#fff" :stroke="LINE" stroke-width="4" stroke-linejoin="round" />
-              <path d="M130 96c0-9 6-15 14-15s14 6 14 15c0 10-6 17-14 17s-14-7-14-17z" fill="#fff" :stroke="LINE" stroke-width="4" stroke-linejoin="round" />
-            </g>
-            <g class="mocca-starglint" fill="#fff">
-              <path d="M108 78c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" />
-              <path d="M156 78c1 6 3 8 9 9-6 1-8 3-9 9-1-6-3-8-9-9 6-1 8-3 9-9z" />
+          <g v-else-if="look.eyes === 'glow'">
+            <!-- dos estrellas blancas que brillan (sin contorno: son pura luz) -->
+            <g class="mocca-glow" fill="#fff">
+              <path class="mocca-star-eye" d="M96 76c2.600 15.400 8.600 21.400 24 24-15.400 2.600-21.400 8.600-24 24-2.600-15.400-8.600-21.400-24-24 15.400-2.600 21.400-8.600 24-24z" />
+              <path class="mocca-star-eye" d="M144 76c2.600 15.400 8.600 21.400 24 24-15.400 2.600-21.400 8.600-24 24-2.600-15.400-8.600-21.400-24-24 15.400-2.600 21.400-8.600 24-24z" />
             </g>
           </g>
           <!-- orgullosa: gafas de sol -->
-          <g v-else-if="mood === 'proud'" class="mocca-shades">
+          <g v-else-if="look.eyes === 'shades'" class="mocca-shades">
             <path d="M74 96q46-8 92 0" fill="none" :stroke="LINE" stroke-width="5" stroke-linecap="round" />
             <path d="M76 92h38c2 0 3 2 3 4 0 12-8 20-20 20s-22-8-22-20c0-2 0-4 1-4z" :fill="LINE" />
             <path d="M126 92h38c1 0 1 2 1 4 0 12-10 20-22 20s-20-8-20-20c0-2 1-4 3-4z" :fill="LINE" />
             <path d="M84 97l10-2M134 97l10-2" fill="none" stroke="#fff" stroke-width="3.500" stroke-linecap="round" opacity="0.85" />
             <path class="mocca-glint" d="M88 112l14-18" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" opacity="0" />
           </g>
+          <!-- cerrados y tranquilos (dormida, aliviada, relajada, tímida, segura) -->
+          <g v-else-if="look.eyes === 'closed'" fill="none" :stroke="LINE" stroke-width="5.500" stroke-linecap="round">
+            <path d="M86 99q10 11 20 0M134 99q10 11 20 0" />
+          </g>
+          <!-- con estrellitas (emocionada, con ganas) -->
+          <g v-else-if="look.eyes === 'stars'">
+            <ellipse cx="96" cy="101" rx="12" ry="13.500" :fill="LINE" />
+            <ellipse cx="144" cy="101" rx="12" ry="13.500" :fill="LINE" />
+            <g fill="#fff" class="mocca-starglint">
+              <path d="M97 90c1.200 7 3.800 9.600 10.500 10.800-6.700 1.200-9.300 3.800-10.500 10.800-1.200-7-3.800-9.600-10.500-10.800 6.700-1.200 9.300-3.800 10.500-10.800z" />
+              <path d="M145 90c1.200 7 3.800 9.600 10.500 10.800-6.700 1.200-9.300 3.800-10.500 10.800-1.200-7-3.800-9.600-10.500-10.800 6.700-1.200 9.300-3.800 10.500-10.800z" />
+            </g>
+            <circle cx="90" cy="109" r="1.800" fill="#fff" />
+            <circle cx="138" cy="109" r="1.800" fill="#fff" />
+          </g>
+          <!-- corazones (enamorada) -->
+          <g v-else-if="look.eyes === 'hearts'" class="mocca-heart-eyes" :fill="PINK" :stroke="LINE" stroke-width="3.500" stroke-linejoin="round">
+            <path d="M96 115c-14-9-17-17-14-22 3-6 11-5 14 1 3-6 11-7 14-1 3 5 0 13-14 22z" />
+            <path d="M144 115c-14-9-17-17-14-22 3-6 11-5 14 1 3-6 11-7 14-1 3 5 0 13-14 22z" />
+            <path d="M88 98q2-4 6-4M136 98q2-4 6-4" fill="none" stroke="#fff" stroke-width="2.500" stroke-linecap="round" />
+          </g>
+          <!-- de susto: muy abiertos y con la pupila chiquita -->
+          <g v-else-if="look.eyes === 'scared'">
+            <ellipse cx="96" cy="100" rx="15" ry="17" fill="#fff" :stroke="LINE" stroke-width="4" />
+            <ellipse cx="144" cy="100" rx="15" ry="17" fill="#fff" :stroke="LINE" stroke-width="4" />
+            <circle cx="97" cy="101" r="3.600" :fill="LINE" />
+            <circle cx="143" cy="101" r="3.600" :fill="LINE" />
+          </g>
           <!-- normales: grandes y brillantes -->
           <g v-else class="mocca-blink">
-            <g :class="mood === 'thinking' && 'mocca-look-up'">
+            <g :class="mood === 'thinking' && 'mocca-look-up'" :style="look.look ? { transform: gaze } : undefined">
               <ellipse cx="96" cy="101" rx="10" ry="12" :fill="LINE" />
               <ellipse cx="144" cy="101" rx="10" ry="12" :fill="LINE" />
               <circle cx="100" cy="96.500" r="3.800" fill="#fff" />
@@ -218,7 +381,22 @@ const arms = computed<[number, number]>(
               <circle cx="141" cy="106" r="1.800" fill="#fff" opacity="0.9" />
             </g>
             <!-- triste: párpado caído y ojos aguados -->
-            <g v-if="mood === 'sad'">
+            <!-- enojada: párpados en "V" -->
+            <g v-if="look.lid === 'angry'">
+              <path d="M82 90l29 11v-23h-29zM158 90l-29 11v-23h29z" :fill="COAT" />
+              <path d="M83 90.500l27 10M157 90.500l-27 10" fill="none" :stroke="LINE" stroke-width="4" stroke-linecap="round" />
+            </g>
+            <!-- decidida: párpados firmes, apenas inclinados -->
+            <g v-else-if="look.lid === 'firm'">
+              <path d="M82 93l29 5v-20h-29zM158 93l-29 5v-20h29z" :fill="COAT" />
+              <path d="M83 93.500l27 4.500M157 93.500l-27 4.500" fill="none" :stroke="LINE" stroke-width="4" stroke-linecap="round" />
+            </g>
+            <!-- aburrida: párpados a media asta -->
+            <g v-else-if="look.lid === 'half'">
+              <path d="M82 101h29v-23h-29zM129 101h29v-23h-29z" :fill="COAT" />
+              <path d="M83.500 101h26M130.500 101h26" fill="none" :stroke="LINE" stroke-width="4" stroke-linecap="round" />
+            </g>
+            <g v-if="look.lid === 'sad'">
               <path d="M83 100q10-10 26-9v-9h-26zM157 100q-10-10-26-9v-9h26z" :fill="COAT" />
               <path d="M83 100q10-10 26-9M157 100q-10-10-26-9" fill="none" :stroke="LINE" stroke-width="3.500" stroke-linecap="round" />
               <ellipse cx="96" cy="109" rx="5" ry="2.500" fill="#fff" opacity="0.75" />
@@ -233,28 +411,86 @@ const arms = computed<[number, number]>(
 
         <!-- boca -->
         <g fill="none" :stroke="LINE" stroke-width="4" stroke-linecap="round" stroke-linejoin="round">
-          <template v-if="mood === 'happy' || mood === 'celebrating'">
+          <template v-if="look.mouth === 'smile' || look.mouth === 'drool'">
             <path d="M120 130v4" />
             <path d="M104 134q16 24 32 0z" :fill="LINE" />
             <path d="M112 145q8-7 16 0-2 7-8 7t-8-7z" :fill="EAR_IN" stroke="none" />
+            <!-- con ganas: se le hace agua la boca -->
+            <path v-if="look.mouth === 'drool'" d="M133 142c3 6 5 9 5 12a5 5 0 0 1-10 0c0-3 2-6 5-12z" :fill="BLUE" stroke-width="3" />
           </template>
-          <template v-else-if="mood === 'proud'">
+          <template v-else-if="look.mouth === 'smirk'">
             <path d="M120 130v4" />
             <path d="M106 136q10 9 22 5 6-2 8-8" />
           </template>
-          <template v-else-if="mood === 'thinking'">
+          <template v-else-if="look.mouth === 'hmm'">
             <path d="M120 130v5" />
             <path d="M111 139q9 4 17-3" />
           </template>
-          <template v-else-if="mood === 'surprised'">
+          <template v-else-if="look.mouth === 'o'">
             <path d="M120 130v3" />
             <ellipse cx="120" cy="141" rx="6" ry="7.500" :fill="LINE" />
           </template>
-          <template v-else-if="mood === 'amazed'">
+          <template v-else-if="look.mouth === 'grin'">
             <path d="M120 130v3" />
             <path d="M100 134q20 30 40 0z" :fill="LINE" />
             <path d="M104 136h32l-3 5h-26z" fill="#fff" stroke="none" />
             <path d="M111 149q9-7 18 0-2 7-9 7t-9-7z" :fill="EAR_IN" stroke="none" />
+          </template>
+          <!-- enojada: dientes apretados -->
+          <template v-else-if="look.mouth === 'gritted'">
+            <path d="M120 130v4" />
+            <path d="M105 137q15-5 30 0v8q-15 5-30 0z" fill="#fff" />
+            <path d="M113 136v11M120 135v12M127 136v11" stroke-width="2.800" />
+          </template>
+          <!-- adormilada: bostezo -->
+          <template v-else-if="look.mouth === 'yawn'">
+            <path d="M120 130v3" />
+            <ellipse cx="120" cy="144" rx="9" ry="11" :fill="LINE" />
+            <ellipse cx="120" cy="150" rx="5.500" ry="4" :fill="EAR_IN" stroke="none" />
+          </template>
+          <!-- nerviosa: boquita temblorosa -->
+          <template v-else-if="look.mouth === 'wavy'">
+            <path d="M120 130v5" />
+            <path d="M105 141q4-5 7.500 0t7.500 0 7.500 0 7.500 0" />
+          </template>
+          <!-- confundida: de lado -->
+          <template v-else-if="look.mouth === 'slant'">
+            <path d="M120 130v5" />
+            <path d="M110 144l18-6" />
+          </template>
+          <!-- sonrisita cerrada -->
+          <template v-else-if="look.mouth === 'cat' || look.mouth === 'tongue'">
+            <path d="M120 130v5" />
+            <path d="M107 137q6.500 8 13 0q6.500 8 13 0" />
+            <!-- hambrienta: lengua afuera -->
+            <path v-if="look.mouth === 'tongue'" d="M113 141c0 12 3 18 7 18s7-6 7-18z" :fill="EAR_IN" stroke-width="3.500" />
+            <path v-if="look.mouth === 'tongue'" d="M120 144v9" stroke-width="2.500" opacity="0.5" />
+          </template>
+          <!-- tímida / ansiosa: la tapan las patitas -->
+          <template v-else-if="look.mouth === 'none'">
+            <path d="M120 130v4" />
+          </template>
+          <!-- aliviada: soplido -->
+          <template v-else-if="look.mouth === 'puff'">
+            <path d="M120 130v4" />
+            <ellipse cx="125" cy="141" rx="4.500" ry="5" :fill="LINE" />
+          </template>
+          <!-- aburrida: recta -->
+          <template v-else-if="look.mouth === 'flat'">
+            <path d="M120 130v5" />
+            <path d="M110 142h20" />
+          </template>
+          <!-- miedosa: grito tembloroso -->
+          <template v-else-if="look.mouth === 'scream'">
+            <path d="M120 130v3" />
+            <path d="M105 139q5-5 10 0t10 0 10 0v7q-7 9-15 9t-15-9z" :fill="LINE" />
+            <ellipse cx="120" cy="150" rx="6" ry="3.500" :fill="EAR_IN" stroke="none" />
+          </template>
+          <!-- sorpresa feliz: boca abierta y redonda, sonriendo -->
+          <template v-else-if="look.mouth === 'smileO'">
+            <path d="M120 130v3" />
+            <path d="M108 136q12-4 24 0 0 16-12 16t-12-16z" :fill="LINE" />
+            <ellipse cx="120" cy="148" rx="6" ry="3.500" :fill="EAR_IN" stroke="none" />
           </template>
           <template v-else>
             <path d="M120 130v6" />
@@ -276,6 +512,16 @@ const arms = computed<[number, number]>(
         <path d="M162 170c10 4 16 18 15 32-1 9-8 13-14 10-6-3-8-10-8-18 0-9 0-16 1-22z" :fill="COAT" :stroke="LINE" stroke-width="5" stroke-linejoin="round" />
         <path d="M177 200c-1 10-8 15-15 12-5-3-7-8-7-13 6 4 15 5 22 1z" :fill="TAN" :stroke="LINE" stroke-width="4" stroke-linejoin="round" />
         <path d="M170 208v4M164 207v4" fill="none" :stroke="LINE" stroke-width="2.500" stroke-linecap="round" />
+        <!-- curiosa: la lupa, que queda justo sobre el ojo -->
+        <g v-if="look.extra === 'lens'" stroke-linecap="round">
+          <path d="M164 212l-3 18" fill="none" :stroke="LINE" stroke-width="10" />
+          <path d="M164 212l-3 18" fill="none" :stroke="GOLD_DEEP" stroke-width="5" />
+          <circle cx="160" cy="249" r="19" fill="#EAF6FF" :stroke="LINE" stroke-width="9" />
+          <circle cx="160" cy="249" r="19" fill="none" :stroke="GOLD" stroke-width="4.500" />
+          <circle cx="160" cy="249" r="11" :fill="LINE" />
+          <circle cx="156" cy="253.500" r="3.600" fill="#fff" />
+          <path d="M172 240q3 5 3 10" fill="none" stroke="#fff" stroke-width="3" opacity="0.9" />
+        </g>
       </g>
     </g>
   </svg>
@@ -467,6 +713,14 @@ const arms = computed<[number, number]>(
 .mocca-glow {
   animation: eye-glow 1.100s ease-in-out infinite;
 }
+.mocca-star-eye {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: star-eye 1.100s ease-in-out infinite;
+}
+.mocca-star-eye:nth-child(2) {
+  animation-delay: 0.180s;
+}
 .mocca-starglint path {
   transform-box: fill-box;
   transform-origin: center;
@@ -488,6 +742,71 @@ const arms = computed<[number, number]>(
 }
 .mocca--proud .mocca-tail {
   animation-duration: 0.900s;
+}
+
+/* ═══ Piezas de los ánimos nuevos ═══ */
+.mocca-tail-fast .mocca-tail {
+  animation-duration: 0.220s;
+}
+.mocca-tail-slow .mocca-tail {
+  animation-duration: 1.700s;
+}
+.mocca-tail-still .mocca-tail {
+  animation: none;
+}
+.mocca-tail-down .mocca-tail {
+  animation: none;
+  transform: rotate(46deg);
+}
+.mocca-anim-bounce .mocca-all {
+  animation: hop-small 0.560s cubic-bezier(0.3, 0, 0.4, 1) infinite;
+}
+.mocca-anim-tremble .mocca-all {
+  animation: tremble 0.140s linear infinite;
+}
+.mocca-anim-sway .mocca-all {
+  animation: sway 2.600s ease-in-out infinite;
+}
+.mocca-anim-nod .mocca-head {
+  animation: nod-sleep 3.400s ease-in-out infinite;
+}
+.mocca-anim-nod .mocca-body {
+  animation-duration: 4.400s;
+}
+.mocca-anim-shake .mocca-all {
+  animation: shake-x 0.280s linear infinite;
+}
+.mocca-anim-pump .mocca-all {
+  animation: hop-small 0.900s cubic-bezier(0.3, 0, 0.4, 1) infinite;
+}
+.mocca-anim-pump .mocca-arm--l {
+  animation: cheer-l 0.450s ease-in-out infinite alternate;
+}
+.mocca-pulse {
+  animation: pulse 0.700s ease-in-out infinite alternate;
+  transform-origin: 204px 56px;
+}
+.mocca-hearts path {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: heart-float 1.800s ease-in-out infinite;
+}
+.mocca-hearts path:nth-child(2) {
+  animation-delay: 0.500s;
+}
+.mocca-hearts path:nth-child(3) {
+  animation-delay: 1s;
+}
+.mocca-heart-eyes {
+  transform-origin: 120px 104px;
+  animation: heart-beat 0.800s ease-in-out infinite;
+}
+.mocca-puff {
+  transform-origin: 172px 152px;
+  animation: puff-out 2.400s ease-out infinite;
+}
+.mocca-sweat {
+  animation: tear 2.200s ease-in infinite;
 }
 
 /* ═══ Acciones de cuerpo entero: mandan sobre las animaciones del ánimo ═══ */
@@ -898,6 +1217,92 @@ const arms = computed<[number, number]>(
   }
 }
 
+@keyframes hop-small {
+  0%,
+  100% {
+    transform: translateY(0) scale(1.050, 0.950);
+  }
+  45% {
+    transform: translateY(-10px) scale(0.970, 1.040);
+  }
+}
+@keyframes sway {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(3deg);
+  }
+}
+@keyframes nod-sleep {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0);
+  }
+  55% {
+    transform: translateY(8px) rotate(5deg);
+  }
+  70% {
+    transform: translateY(9px) rotate(6deg);
+  }
+  80% {
+    transform: translateY(1px) rotate(-1deg);
+  }
+}
+@keyframes shake-x {
+  0%,
+  100% {
+    transform: translateX(-2px);
+  }
+  50% {
+    transform: translateX(2px);
+  }
+}
+@keyframes pulse {
+  from {
+    transform: scale(0.880);
+    opacity: 0.750;
+  }
+  to {
+    transform: scale(1.080);
+    opacity: 1;
+  }
+}
+@keyframes heart-float {
+  0% {
+    transform: translateY(8px) scale(0.600);
+    opacity: 0;
+  }
+  35% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateY(-16px) scale(1.100);
+    opacity: 0;
+  }
+}
+@keyframes heart-beat {
+  50% {
+    transform: scale(1.100);
+  }
+}
+@keyframes puff-out {
+  0%,
+  35% {
+    transform: scale(0.200);
+    opacity: 0;
+  }
+  55% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translate(16px, -6px) scale(1.200);
+    opacity: 0;
+  }
+}
+
 @keyframes breathe {
   50% {
     transform: scale(1.025, 0.982);
@@ -1108,10 +1513,15 @@ const arms = computed<[number, number]>(
 @keyframes eye-glow {
   0%,
   100% {
-    filter: drop-shadow(0 0 3px #fff) drop-shadow(0 0 8px #ffe58a);
+    filter: drop-shadow(0 0 4px #fff) drop-shadow(0 0 10px #ffe58a) drop-shadow(0 0 18px #ffc93c);
   }
   50% {
-    filter: drop-shadow(0 0 7px #fff) drop-shadow(0 0 20px #ffd23f) drop-shadow(0 0 34px #ffb300);
+    filter: drop-shadow(0 0 8px #fff) drop-shadow(0 0 22px #ffd23f) drop-shadow(0 0 38px #ffb300);
+  }
+}
+@keyframes star-eye {
+  50% {
+    transform: scale(1.140) rotate(8deg);
   }
 }
 @keyframes starglint {
