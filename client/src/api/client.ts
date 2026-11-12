@@ -196,6 +196,9 @@ export const api = {
   // Modo estudio
   studyDeck: (sourceIds: string[]) => request<StudyDeckDTO>('GET', `/study?sources=${sourceIds.join(',')}`),
 
+  // Música de la escena del examen perfecto (si hay una guardada)
+  sceneMusic: () => request<{ url: string | null }>('GET', '/scene-music').then((r) => r.url),
+
   // Calendario de la U
   calendar: () => request<CalendarDTO>('GET', '/calendar'),
   connectCalendar: (url: string) => request<CalendarDTO>('PUT', '/calendar/feed', { url }),

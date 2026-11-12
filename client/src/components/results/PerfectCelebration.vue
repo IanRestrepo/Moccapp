@@ -9,6 +9,7 @@ import { clock } from '@/lib/format'
 import { spring } from '@/lib/motion'
 import { useCountUp } from '@/composables/useCountUp'
 import { useSound } from '@/composables/useSound'
+import { api } from '@/api/client'
 
 /**
  * ¡Examen perfecto! en dos tiempos:
@@ -18,7 +19,8 @@ import { useSound } from '@/composables/useSound'
  *     1,95 s vuelve caminando, medio apenada
  *     2,8 s  ve el resultado y se agacha para tomar impulso
  *     3,05 s EXPLOSIÓN: destello, ondas de choque, rayos girando; le brillan los ojos y salta de emoción
- *            (se estira al subir y se aplasta al caer); "¡Examen perfecto!" cae letra por letra en dorado
+ *            (se estira al subir y se aplasta al caer); "¡Examen perfecto!" cae letra por letra en dorado.
+ *            Se queda celebrando hasta que toque la pantalla.
  *  2. Resumen: Mocca con gafas y medalla de oro, tres tarjetas (XP, 100 %, tiempo) y "Recibir XP".
  */
 const props = defineProps<{ open: boolean; xp: number; streak: number; timeSec: number; limitSec: number; bones?: number }>()
@@ -40,20 +42,34 @@ const mood = ref<MascotMood>('happy')
 /** fase de la escena, para el polvo del frenazo y el golpe */
 const beat = ref<'run' | 'slip' | 'crash' | 'back' | 'boom'>('run')
 
-/** La escena arranca cuando su música ya está cargada, para que cada sonido caiga en su momento */
+/**
+ * La música de la escena la entrega el servidor (no viene con la app). Es una canción larga: se pide su dirección
+ * al entrar a resultados, pero solo se empieza a cargar si de verdad sale la escena. La escena espera a que pueda
+ * sonar para que la explosión caiga justo donde entra la banda. Si no hay música, suena el efecto de siempre.
+ */
 const go = ref(false)
-sound.ready('perfectScene')
+let hasMusic = false
+const music = api
+  .sceneMusic()
+  .then((url) => {
+    if (!url) return
+    sound.setSource('perfectScene', url)
+    hasMusic = true
+  })
+  .catch(() => {})
 
 async function start() {
   clearTimers()
   if (reduced) return showSummary()
   go.value = false
   stage.value = 'intro'
-  // máximo 0,8 s de espera: si la red está lenta, la escena sale igual
-  await Promise.race([sound.ready('perfectScene'), new Promise((r) => setTimeout(r, 800))])
+  // máximo 2 s de espera: si la red está lenta, la escena sale igual
+  await Promise.race([music.then(() => (hasMusic ? sound.ready('perfectScene') : undefined)), new Promise((r) => setTimeout(r, 2000))])
   if (!props.open || stage.value !== 'intro') return
   go.value = true
-  sound.play('perfectScene')
+  if (hasMusic) sound.play('perfectScene')
+  // sin música guardada: el efecto de siempre, con su golpe grave justo en la explosión
+  else later(BOOM * 1000 - 460, () => sound.play('perfect'))
   act.value = 'run'
   mood.value = 'happy'
   beat.value = 'run'
@@ -90,15 +106,14 @@ async function start() {
     confetti({ particleCount: 45, angle: 60, spread: 60, startVelocity: 52, origin: { x: 0, y: 0.78 }, colors: GOLD })
     confetti({ particleCount: 45, angle: 120, spread: 60, startVelocity: 52, origin: { x: 1, y: 0.78 }, colors: GOLD })
   })
-  // deja sonar el acorde final de la guitarra
-  later(BOOM * 1000 + 3850, showSummary)
+  // no pasa sola al resumen: Mocca se queda celebrando hasta que toque la pantalla
 }
 
 function showSummary() {
   if (stage.value === 'summary' && timers.length === 0) return
   clearTimers()
-  // si la saltó tocando, la música de la escena se apaga suave
-  sound.stop('perfectScene')
+  // la canción sigue mientras Mocca celebra y se apaga suave cuando toca la pantalla
+  sound.stop('perfectScene', 700)
   stage.value = 'summary'
   ;[0, 1, 2].forEach((i) => later(420 + i * 160, () => sound.play('pop')))
   xpCount.run(props.xp, 900, 450)
@@ -115,7 +130,7 @@ onBeforeUnmount(() => {
   confetti.reset()
 })
 
-/** Tocar durante la entrada la salta */
+/** Tocar la pantalla pasa al resumen (en cualquier momento de la escena) */
 function skip() {
   if (stage.value === 'intro') showSummary()
 }
@@ -572,9 +587,13 @@ const cards = computed(() => [
   text-align: center;
   font-size: 13px;
   font-weight: 700;
-  color: rgba(255, 255, 255, 0.700);
+  color: rgba(255, 255, 255, 0.850);
+  font-size: 14px;
   opacity: 0;
-  animation: rise 0.400s calc(var(--boom) + 2.200s) ease-out both;
+  /* aparece y luego late suave: es la única forma de seguir */
+  animation:
+    rise 0.400s calc(var(--boom) + 2.200s) ease-out both,
+    hint 1.800s calc(var(--boom) + 2.800s) ease-in-out infinite;
 }
 
 @keyframes shake {
@@ -666,6 +685,9 @@ const cards = computed(() => [
 @keyframes shine {
   0%, 100% { filter: drop-shadow(0 4px 0 #9a5200) drop-shadow(0 0 14px rgba(255, 190, 40, 0.550)); }
   50% { filter: drop-shadow(0 4px 0 #9a5200) drop-shadow(0 0 26px rgba(255, 225, 120, 0.950)) brightness(1.150); }
+}
+@keyframes hint {
+  50% { opacity: 0.350; }
 }
 @keyframes rise {
   from { opacity: 0; transform: translateY(14px); }

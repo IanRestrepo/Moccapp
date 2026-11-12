@@ -16,6 +16,7 @@ import { pathRouter } from './routes/path.js'
 import { collectionsRouter } from './routes/collections.js'
 import { guideRouter } from './routes/guide.js'
 import { calendarRouter } from './routes/calendar.js'
+import { musicRouter } from './routes/music.js'
 
 export function createApp() {
   const app = express()
@@ -39,6 +40,7 @@ export function createApp() {
   app.use('/api/path', pathRouter)
   app.use('/api/guide', guideRouter)
   app.use('/api/calendar', calendarRouter)
+  app.use('/api/scene-music', musicRouter)
   app.use('/api/collections', collectionsRouter)
   app.use('/api/push', pushRouter)
   app.use('/api/rewards', rewardsRouter)

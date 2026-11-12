@@ -3,7 +3,7 @@ import { Howl, Howler } from 'howler'
 import { ref, watch } from 'vue'
 import { api } from '@/api/client'
 
-/** perfectScene: la música de la escena del examen perfecto, hecha a su medida (scripts/gen-perfect-scene.mjs) */
+/** perfectScene: la música de la escena del examen perfecto. No viene en la app: la entrega el servidor (setSource) */
 export type SoundName = 'tap' | 'select' | 'correct' | 'wrong' | 'tick' | 'finish' | 'perfect' | 'pop' | 'perfectScene'
 
 const readPref = () => {
@@ -25,10 +25,20 @@ watch(enabled, (on) => {
 })
 Howler.mute(!enabled.value)
 
+/** Sonidos que no vienen con la app sino de una dirección que da el servidor */
+const remote = new Map<SoundName, string>()
+
 function howl(name: SoundName): Howl {
   let h = cache.get(name)
   if (!h) {
-    h = new Howl({ src: [`/sounds/${name}.wav`], volume: name === 'tick' ? 0.35 : name === 'perfect' || name === 'perfectScene' ? 0.85 : 0.6, preload: true })
+    const url = remote.get(name)
+    h = new Howl({
+      src: [url ?? `/sounds/${name}.wav`],
+      // lo que da el servidor es música larga: suena mientras se descarga, sin bajarla entera primero
+      ...(url ? { format: ['m4a'], html5: true } : {}),
+      volume: name === 'tick' ? 0.35 : name === 'perfect' || name === 'perfectScene' ? 0.85 : 0.6,
+      preload: true,
+    })
     cache.set(name, h)
   }
   return h
@@ -38,6 +48,13 @@ export function useSound() {
   return {
     enabled,
     play: (name: SoundName) => enabled.value && howl(name).play(),
+    /** Usa esta dirección para ese sonido (p. ej. la música que guarda el servidor) */
+    setSource(name: SoundName, url: string) {
+      if (remote.get(name) === url) return
+      remote.set(name, url)
+      cache.get(name)?.unload()
+      cache.delete(name)
+    },
     /** Lo deja cargado; la promesa se cumple cuando ya puede sonar (o si falla, igual: nunca bloquea) */
     ready: (name: SoundName) =>
       new Promise<void>((resolve) => {
@@ -47,10 +64,10 @@ export function useSound() {
         h.once('loaderror', () => resolve())
       }),
     /** Lo calla con un desvanecido corto */
-    stop(name: SoundName) {
+    stop(name: SoundName, fadeMs = 180) {
       const h = cache.get(name)
       if (!h || !h.playing()) return
-      h.fade(h.volume(), 0, 180)
+      h.fade(h.volume(), 0, fadeMs)
       h.once('fade', () => {
         h.stop()
         h.volume(0.85)
