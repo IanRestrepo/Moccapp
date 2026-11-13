@@ -14,6 +14,9 @@ export const router = createRouter({
     { path: '/guia/:id', component: () => import('@/views/GuideView.vue') },
     // mini examen de un tema de la guía (misma pantalla que las lecciones del camino)
     { path: '/guia/:id/tema/:i', component: () => import('@/views/LessonView.vue') },
+    { path: '/jugar', component: () => import('@/views/GamesView.vue') },
+    { path: '/jugar/sopa/:sourceId', component: () => import('@/views/WordSearchView.vue') },
+    { path: '/album', component: () => import('@/views/AlbumView.vue') },
     { path: '/calendario', component: () => import('@/views/CalendarView.vue') },
     { path: '/camino', component: () => import('@/views/PathView.vue') },
     { path: '/leccion/:key', component: () => import('@/views/LessonView.vue') },

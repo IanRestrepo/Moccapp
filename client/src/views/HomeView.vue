@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhArrowRight, PhCalendarDots, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun } from '@phosphor-icons/vue'
+import { PhArrowRight, PhCalendarDots, PhPuzzlePiece, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun } from '@phosphor-icons/vue'
 import { EXAM_LEVEL_LABELS, type CalendarDTO, type ExamHistoryItemDTO, type SourceDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import PhoneCard from '@/components/PhoneCard.vue'
@@ -168,6 +168,20 @@ function startExam() {
       <span class="min-w-0 flex-1">
         <span class="block font-display text-[19px] font-extrabold leading-tight">Estudiar con tarjetas</span>
         <span class="block text-[13.5px] font-medium opacity-75">Sin examen, sin reloj. Pregunta y respuesta.</span>
+      </span>
+      <PhArrowRight :size="20" weight="bold" />
+    </RouterLink>
+
+    <!-- Jueguitos: sopa de letras que da sobres de Moccas -->
+    <RouterLink
+      v-if="ready.length"
+      to="/jugar"
+      class="mt-3 flex items-center gap-3 rounded-card bg-pink p-4 pl-5 text-on-color transition-transform active:scale-[0.98]"
+    >
+      <PhPuzzlePiece :size="32" weight="fill" class="shrink-0" />
+      <span class="min-w-0 flex-1">
+        <span class="block font-display text-[19px] font-extrabold leading-tight">Jueguitos</span>
+        <span class="block text-[13.5px] font-medium opacity-75">Sopa de letras de tus temas. Gana sobres de Moccas.</span>
       </span>
       <PhArrowRight :size="20" weight="bold" />
     </RouterLink>

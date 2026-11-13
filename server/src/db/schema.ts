@@ -247,6 +247,9 @@ export const userStats = pgTable(
     lastSeenDevice: text('last_seen_device'),
     /** Dato curioso cada mañana (push) */
     dailyFacts: boolean('daily_facts').notNull().default(true),
+    /** Sobres de Moccas sin abrir, y cuántos ha abierto en total */
+    packs: integer('packs').notNull().default(0),
+    packsOpened: integer('packs_opened').notNull().default(0),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
   },
   // una fila por perfil: 1 = Ash (la de siempre), 2… = invitadas (ver lib/profile.ts)
@@ -419,3 +422,32 @@ export const examEvents = pgTable(
   (t) => [uniqueIndex('exam_events_profile_uid_uq').on(t.profile, t.uid), index('exam_events_profile_start_idx').on(t.profile, t.startsAt)],
 )
 export type ExamEvent = typeof examEvents.$inferSelect
+
+// ── jueguitos, sobres y colección ────────────────────────────
+// Cada sopa de letras terminada da un sobre; al abrirlo salen Moccas de colección.
+
+export const wordGames = pgTable(
+  'word_games',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    profile: text('profile').notNull(),
+    sourceId: uuid('source_id')
+      .notNull()
+      .references(() => sources.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    packGranted: boolean('pack_granted').notNull().default(false),
+  },
+  (t) => [index('word_games_profile_idx').on(t.profile, t.completedAt)],
+)
+
+export const moccaCards = pgTable(
+  'mocca_cards',
+  {
+    profile: text('profile').notNull(),
+    mood: text('mood').notNull(),
+    count: integer('count').notNull().default(1),
+    firstAt: timestamp('first_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [primaryKey({ columns: [t.profile, t.mood] })],
+)

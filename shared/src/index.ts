@@ -721,7 +721,7 @@ export interface AdminPersonDTO extends PresenceDTO {
 }
 
 // ── Presencia (solo el administrador la ve) ─────────────────
-export const PRESENCE_VIEWS = ['home', 'sources', 'guide', 'calendar', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
+export const PRESENCE_VIEWS = ['home', 'sources', 'guide', 'calendar', 'games', 'collection', 'configure', 'study', 'path', 'lesson', 'exam', 'results', 'history', 'rewards', 'mocca', 'other'] as const
 export type PresenceView = (typeof PRESENCE_VIEWS)[number]
 export const PresencePingSchema = z.object({ view: z.enum(PRESENCE_VIEWS).catch('other') })
 
@@ -788,3 +788,61 @@ export const UpdateExamSchema = z.object({
   /** true = "no es un parcial": no se muestra ni avisa */
   hidden: z.boolean().optional(),
 })
+
+// ── Jueguitos: sopa de letras, sobres y colección de Moccas ──
+export interface WordSearchWordDTO {
+  /** La palabra en la sopa: mayúsculas, sin tildes ni espacios */
+  word: string
+  /** Como se escribe de verdad ("Médula ósea") */
+  display: string
+  /** La pista: su definición (sin decir la palabra) */
+  clue: string
+  /** Tema de la guía de donde sale */
+  topic: string
+  /** Dónde está: fila y columna de la primera letra y hacia dónde va */
+  row: number
+  col: number
+  dr: number
+  dc: number
+}
+export interface WordSearchDTO {
+  id: string
+  sourceId: string
+  title: string
+  color: SourceColor
+  size: number
+  /** Una cadena por fila */
+  rows: string[]
+  words: WordSearchWordDTO[]
+}
+export interface GamesDTO {
+  sources: { id: string; title: string; color: SourceColor; guide: GuideStatus; words: number }[]
+  packs: number
+  /** Sobres ganados hoy y el tope diario */
+  packsToday: number
+  dailyLimit: number
+}
+export interface GameCompleteResponse {
+  /** Si ganó un sobre (uno por sopa, hasta el tope del día) */
+  pack: boolean
+  packs: number
+  packsToday: number
+  dailyLimit: number
+  xp: number
+  streak: { current: number; extendedToday: boolean }
+}
+export interface MoccaCardDTO {
+  mood: MoccaMood
+  count: number
+  firstAt: string
+}
+export interface MoccaAlbumDTO {
+  packs: number
+  cards: MoccaCardDTO[]
+  /** Las que puede conseguir este perfil (algunas son solo de Ash) */
+  available: MoccaMood[]
+}
+export interface OpenPackResponse {
+  cards: { mood: MoccaMood; rarity: MoccaRarity; isNew: boolean; count: number }[]
+  packs: number
+}

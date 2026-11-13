@@ -39,6 +39,8 @@ function viewOf(path: string): PresenceView {
     ['/carpeta/', 'sources'],
     ['/guia/', 'guide'],
     ['/calendario', 'calendar'],
+    ['/jugar', 'games'],
+    ['/album', 'collection'],
     ['/configurar', 'configure'],
     ['/estudiar', 'study'],
     ['/camino', 'path'],

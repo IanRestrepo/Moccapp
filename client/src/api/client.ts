@@ -19,6 +19,11 @@ import type {
   PathDTO,
   StudyGuideDTO,
   CalendarDTO,
+  GamesDTO,
+  WordSearchDTO,
+  GameCompleteResponse,
+  MoccaAlbumDTO,
+  OpenPackResponse,
   ExamEventDTO,
   GuideTopicQuizDTO,
   PathLessonDTO,
@@ -198,6 +203,13 @@ export const api = {
 
   // Música de la escena del examen perfecto (si hay una guardada)
   sceneMusic: () => request<{ url: string | null }>('GET', '/scene-music').then((r) => r.url),
+
+  // Jueguitos y álbum de Moccas
+  games: () => request<GamesDTO>('GET', '/games'),
+  newWordSearch: (sourceId: string) => request<WordSearchDTO>('POST', '/games/wordsearch', { sourceId }),
+  completeGame: (id: string) => request<GameCompleteResponse>('POST', `/games/${id}/complete`),
+  album: () => request<MoccaAlbumDTO>('GET', '/mocca-cards'),
+  openPack: () => request<OpenPackResponse>('POST', '/mocca-cards/open'),
 
   // Calendario de la U
   calendar: () => request<CalendarDTO>('GET', '/calendar'),
