@@ -36,7 +36,8 @@ const api = async <T>(method: string, url: string, body?: unknown) => {
   return { status: res.status, body: (res.status === 204 ? null : await res.json()) as T }
 }
 
-const ymd = (d: Date) => d.toISOString().slice(0, 10).replace(/-/g, '')
+// la fecha en hora de Colombia (en UTC, después de las 7 p. m. ya sería mañana)
+const ymd = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: 'America/Bogota' }).replace(/-/g, '')
 const inDays = (n: number) => new Date(Date.now() + n * 86_400_000)
 /** Un calendario como el que exporta Google: con zona horaria, uno de todo el día, una clase que se repite y una alarma */
 const ics = (extra = '') =>
