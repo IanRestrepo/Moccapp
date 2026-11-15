@@ -6,6 +6,7 @@ import type { SourceDTO } from '@vetquiz/shared'
 import BottomSheet from '@/components/ui/BottomSheet.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { useSourcesStore } from '@/stores/sources'
+import { uploadedLong } from '@/lib/format'
 
 /**
  * Opciones de una fuente, en una hoja que sube desde abajo (cómodo en el celular): abrir la guía, hacer examen,
@@ -51,6 +52,7 @@ async function remove() {
 <template>
   <BottomSheet :open="!!source" :title="source?.title ?? ''" @close="emit('close')">
     <div v-if="source" class="flex flex-col gap-2 pb-2">
+      <p class="-mt-2 mb-1 text-[13px] font-semibold text-ink-3">{{ uploadedLong(source.createdAt) }}</p>
       <template v-if="source.status === 'ready'">
         <button class="action" @click="go(`/guia/${source.id}`)">
           <PhBookOpenText :size="22" weight="bold" /> Abrir la guía de estudio

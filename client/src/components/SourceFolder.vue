@@ -4,6 +4,7 @@ import { motion } from 'motion-v'
 import { PhFilePdf, PhFilePpt, PhImage, PhTextAa, PhYoutubeLogo, PhFileDoc, PhArrowsClockwise } from '@phosphor-icons/vue'
 import type { SourceColor, SourceDTO } from '@vetquiz/shared'
 import { pressable } from '@/lib/motion'
+import { uploadedShort } from '@/lib/format'
 
 /** Fuente como carpeta (referencia "Saved"): lo que hay adentro asoma por detrás. */
 const props = defineProps<{ source: SourceDTO }>()
@@ -60,7 +61,10 @@ const excerpt = computed(() => props.source.excerpt?.replace(/Diapositiva \d+:\s
 
     <!-- frente -->
     <span class="absolute inset-x-0 bottom-0 flex h-[60%] flex-col justify-between rounded-[22px] p-4" :style="{ background: front }">
-      <span class="line-clamp-2 font-display text-[17px] font-bold leading-[1.1] tracking-[-0.02em]">{{ source.title }}</span>
+      <span class="min-w-0">
+        <span class="line-clamp-2 font-display text-[17px] font-bold leading-[1.1] tracking-[-0.02em]">{{ source.title }}</span>
+        <span class="mt-0.5 block text-[11.5px] font-bold opacity-60">{{ uploadedShort(source.createdAt) }}</span>
+      </span>
       <span class="flex items-center justify-between gap-2 text-[12.5px] font-semibold">
         <span v-if="processing" class="flex items-center gap-1.5 opacity-80">
           <span class="size-2 animate-pulse rounded-full bg-[#16141c]" /> Mocca estudiando…

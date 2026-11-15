@@ -248,6 +248,7 @@ export async function getGuide(sourceId: string, start = true): Promise<StudyGui
   return {
     sourceId,
     title: source.title,
+    uploadedAt: source.createdAt.toISOString(),
     color: source.color,
     status,
     guide: status === 'ready' && row!.data ? withoutLogistics(row!.data) : null,

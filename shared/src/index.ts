@@ -533,6 +533,8 @@ export interface StudyGuideDTO {
   error: string | null
   /** Preguntas listas en el banco (para el botón de examen) */
   questions: number
+  /** Cuándo se subió la fuente (ISO) */
+  uploadedAt: string
 }
 
 /** Mini examen de un tema de la guía */

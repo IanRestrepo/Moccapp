@@ -13,6 +13,7 @@ import { guideScript, useGuideReader } from '@/composables/useGuideReader'
 import { api, ApiRequestError } from '@/api/client'
 import { colorClasses, spring } from '@/lib/motion'
 import { paragraphs, richText } from '@/lib/richText'
+import { uploadedLong } from '@/lib/format'
 import { useSound } from '@/composables/useSound'
 import { useFullExam } from '@/composables/useGuideProgress'
 
@@ -173,6 +174,7 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
         <p v-if="guide" class="mt-2 text-[14px] font-semibold opacity-70">
           {{ guide.sections.length }} temas · {{ minutes }} min de lectura · {{ read.size }}/{{ guide.sections.length }} leídos
         </p>
+        <p class="mt-1 text-[12.5px] font-semibold opacity-60">{{ uploadedLong(data.uploadedAt) }}</p>
         <button
           v-if="guide && reader.supported"
           class="mt-4 flex w-full items-center gap-3 rounded-[20px] bg-white/45 px-4 py-3 text-left"

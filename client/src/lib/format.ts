@@ -18,6 +18,33 @@ export function relativeDay(iso: string, now = new Date()): string {
 }
 const startOfDay = (d: Date) => new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime()
 
+const TZ = 'America/Bogota'
+const ymd = (d: Date) => d.toLocaleDateString('en-CA', { timeZone: TZ })
+/** Días entre esa fecha y hoy, contados en la hora de Colombia */
+const daysAgo = (iso: string, now = new Date()) =>
+  Math.round((new Date(`${ymd(now)}T12:00:00Z`).getTime() - new Date(`${ymd(new Date(iso))}T12:00:00Z`).getTime()) / 86_400_000)
+
+/** Fecha de subida corta para la tarjeta: "Subida hoy", "Subida ayer", "Subida el 12 nov" (con año si no es este) */
+export function uploadedShort(iso: string, now = new Date()): string {
+  const days = daysAgo(iso, now)
+  if (days <= 0) return 'Subida hoy'
+  if (days === 1) return 'Subida ayer'
+  const d = new Date(iso)
+  const sameYear = d.toLocaleDateString('en-CA', { timeZone: TZ }).slice(0, 4) === ymd(now).slice(0, 4)
+  const text = new Intl.DateTimeFormat('es-CO', { timeZone: TZ, day: 'numeric', month: 'short', ...(sameYear ? {} : { year: 'numeric' }) })
+    .format(d)
+    .replace('.', '')
+  return `Subida el ${text}`
+}
+
+/** Fecha de subida completa: "Subida el 12 de noviembre de 2026 · 3:40 p. m." */
+export function uploadedLong(iso: string): string {
+  const d = new Date(iso)
+  const day = new Intl.DateTimeFormat('es-CO', { timeZone: TZ, day: 'numeric', month: 'long', year: 'numeric' }).format(d)
+  const time = new Intl.DateTimeFormat('es-CO', { timeZone: TZ, hour: 'numeric', minute: '2-digit' }).format(d)
+  return `Subida el ${day} · ${time}`
+}
+
 /** Letra corta del día para la semana: "Lu", "Ma"… */
 export function weekdayShort(ymd: string): string {
   const d = new Date(`${ymd}T12:00:00`)
