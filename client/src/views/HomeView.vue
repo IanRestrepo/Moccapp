@@ -201,7 +201,7 @@ function startExam() {
               ? `${calendar.exams.length} ${calendar.exams.length === 1 ? 'parcial' : 'parciales'} a la vista · Mocca te avisa antes`
               : calendar.feed.connected
                 ? 'Calendario conectado · sin parciales a la vista'
-                : 'Conecta tu calendario de la U y Mocca te avisa días antes'
+                : 'Anota tus parciales y Mocca te avisa días antes'
           }}
         </span>
       </span>

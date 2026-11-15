@@ -243,3 +243,19 @@ test('datos curiosos: de sus guías, y se pueden apagar', async () => {
 test('el aviso de la mañana necesita la clave del cron', async () => {
   assert.equal((await fetch(`${base}/cron/morning`)).status, 401)
 })
+
+test('editar un parcial agregado a mano: nombre, fecha y hora; los del calendario no se editan aquí', async () => {
+  const day = (n: number) => new Date(Date.now() + n * 86_400_000).toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+  const created = (await api<{ exam: ExamEventDTO }>('POST', '/calendar/exams', { title: 'Quiz de histología', date: day(5) })).body.exam
+  assert.equal(created.allDay, true)
+  const edited = await api<{ exam: ExamEventDTO }>('PATCH', `/calendar/exams/${created.id}`, { title: 'Parcial de histología', date: day(9), time: '07:30' })
+  assert.equal(edited.status, 200)
+  assert.deepEqual([edited.body.exam.title, edited.body.exam.daysLeft, edited.body.exam.allDay], ['Parcial de histología', 9, false])
+  // quitarle la hora
+  const noTime = await api<{ exam: ExamEventDTO }>('PATCH', `/calendar/exams/${created.id}`, { time: null })
+  assert.deepEqual([noTime.body.exam.daysLeft, noTime.body.exam.allDay], [9, true])
+  assert.equal((await api('PATCH', `/calendar/exams/${created.id}`, { date: '2020-01-01' })).status, 400)
+  // uno del calendario
+  const fromCal = (await api<CalendarDTO>('GET', '/calendar')).body.exams.find((e) => e.origin === 'calendar')!
+  assert.equal((await api('PATCH', `/calendar/exams/${fromCal.id}`, { title: 'Otro nombre' })).status, 400)
+})

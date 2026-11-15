@@ -787,6 +787,17 @@ export const UpdateExamSchema = z.object({
   sourceIds: z.array(z.string().uuid()).max(12).optional(),
   /** true = "no es un parcial": no se muestra ni avisa */
   hidden: z.boolean().optional(),
+  /** Solo los que agregó a mano: cambiar nombre, fecha u hora (null = sin hora) */
+  title: z.string().trim().min(2, 'Ponle nombre al parcial.').max(120).optional(),
+  date: z
+    .string()
+    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Elige la fecha.')
+    .optional(),
+  time: z
+    .string()
+    .regex(/^\d{2}:\d{2}$/)
+    .nullable()
+    .optional(),
 })
 
 // ── Jueguitos: sopa de letras, sobres y colección de Moccas ──

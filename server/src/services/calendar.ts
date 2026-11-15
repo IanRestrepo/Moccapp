@@ -226,6 +226,10 @@ export async function getCalendar(fetchImpl: typeof fetch = fetch, resync = true
 
 // ── Parciales a mano y ajustes ───────────────────────────────
 
+/** "HH:MM" en la hora de la app */
+const localTime = (d: Date) =>
+  new Intl.DateTimeFormat('en-GB', { timeZone: env.APP_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d)
+
 async function checkSources(ids: string[]) {
   if (!ids.length) return []
   const ok = await db
@@ -269,13 +273,31 @@ async function ownExam(id: string) {
   return row
 }
 
-export async function updateExam(id: string, patch: { sourceIds?: string[]; hidden?: boolean }): Promise<ExamEventDTO> {
-  await ownExam(id)
+export async function updateExam(
+  id: string,
+  patch: { sourceIds?: string[]; hidden?: boolean; title?: string; date?: string; time?: string | null },
+): Promise<ExamEventDTO> {
+  const row = await ownExam(id)
   const set: Partial<ExamEvent> = {}
   if (patch.sourceIds) Object.assign(set, { sourceIds: await checkSources(patch.sourceIds), sourcesLocked: true })
   if (patch.hidden !== undefined) set.hidden = patch.hidden
-  const [row] = await db.update(examEvents).set(set).where(eq(examEvents.id, id)).returning()
-  return toExamDTO(row!)
+  if (patch.title !== undefined || patch.date !== undefined || patch.time !== undefined) {
+    // los del calendario se cambian en el calendario (si no, la próxima lectura los dejaría como estaban)
+    if (row.origin !== 'manual') throw new AppError(400, 'FROM_CALENDAR', 'Este parcial viene de tu calendario: cámbialo allá y aquí se actualiza solo.')
+    if (patch.title) set.title = patch.title
+    if (patch.date !== undefined || patch.time !== undefined) {
+      const date = patch.date ?? localDate(row.startsAt)
+      const time = patch.time === undefined ? (row.allDay ? null : localTime(row.startsAt)) : patch.time
+      const [y, m, d] = date.split('-').map(Number) as [number, number, number]
+      const [h, mi] = time ? (time.split(':').map(Number) as [number, number]) : [12, 0]
+      const startsAt = zonedTime(y, m, d, h, mi, 0, env.APP_TIMEZONE)
+      if (daysUntil(startsAt) < 0) throw new AppError(400, 'PAST_DATE', 'Esa fecha ya pasó.')
+      // si cambia la fecha, los avisos vuelven a empezar
+      Object.assign(set, { startsAt, allDay: !time, ...(startsAt.getTime() !== row.startsAt.getTime() ? { notified: [] } : {}) })
+    }
+  }
+  const [updated] = await db.update(examEvents).set(set).where(eq(examEvents.id, id)).returning()
+  return toExamDTO(updated!)
 }
 
 export async function deleteExam(id: string) {

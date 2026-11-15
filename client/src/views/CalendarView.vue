@@ -90,22 +90,42 @@ const synced = computed(() => {
   return min < 1 ? 'hace un momento' : min < 60 ? `hace ${min} min` : `hace ${Math.round(min / 60)} h`
 })
 
-// ── agregar a mano ──
+// ── agregar a mano (o editar uno agregado a mano) ──
 const adding = ref(false)
+/** null = agregando uno nuevo; si no, el que está editando */
+const editingExam = ref<ExamEventDTO | null>(null)
 const form = ref({ title: '', date: '', time: '', sourceIds: [] as string[] })
-const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Bogota' })
+const TZ = 'America/Bogota'
+const today = new Date().toLocaleDateString('en-CA', { timeZone: TZ })
 function openAdd() {
+  editingExam.value = null
   form.value = { title: '', date: '', time: '', sourceIds: [] }
+  adding.value = true
+}
+function openEdit(e: ExamEventDTO) {
+  menuFor.value = null
+  editingExam.value = e
+  const d = new Date(e.startsAt)
+  form.value = {
+    title: e.title,
+    date: d.toLocaleDateString('en-CA', { timeZone: TZ }),
+    time: e.allDay ? '' : new Intl.DateTimeFormat('en-GB', { timeZone: TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).format(d),
+    sourceIds: [...e.sourceIds],
+  }
   adding.value = true
 }
 const add = () =>
   run('add', async () => {
     const f = form.value
-    await api.addExam({ title: f.title.trim(), date: f.date, ...(f.time ? { time: f.time } : {}), sourceIds: f.sourceIds })
+    const e = editingExam.value
+    if (e) await api.updateExam(e.id, { title: f.title.trim(), date: f.date, time: f.time || null, sourceIds: f.sourceIds })
+    else await api.addExam({ title: f.title.trim(), date: f.date, ...(f.time ? { time: f.time } : {}), sourceIds: f.sourceIds })
     adding.value = false
     play('correct')
     return api.calendar()
   })
+/** El calendario es opcional: su caja va cerrada si no lo ha conectado */
+const showFeed = ref(false)
 
 // ── fuentes de un parcial ──
 const editing = ref<ExamEventDTO | null>(null)
@@ -145,7 +165,7 @@ const toggleFacts = () =>
         <PhArrowLeft :size="20" weight="bold" />
       </button>
       <h1 class="flex-1 font-display text-[24px] font-extrabold tracking-[-0.02em]">Mis parciales</h1>
-      <button class="flex h-11 items-center gap-1.5 rounded-full bg-surface px-4 text-[14px] font-bold ring-1 ring-line" @click="openAdd">
+      <button class="flex h-11 items-center gap-1.5 rounded-full bg-lilac px-4 text-[14px] font-bold text-on-color" @click="openAdd">
         <PhPlus :size="17" weight="bold" /> Agregar
       </button>
     </header>
@@ -160,9 +180,12 @@ const toggleFacts = () =>
         <h2 class="mt-1 font-display text-[24px] font-extrabold leading-[1.05]">{{ next.title }}</h2>
         <p class="mt-2 font-display text-[30px] font-extrabold leading-none">{{ countdown(next) }}</p>
         <p class="mt-1 text-[13.5px] font-semibold opacity-75">{{ whenText(next) }}</p>
-        <BaseButton class="mt-4" size="md" @click="study(next)">
-          <PhBookOpenText :size="18" weight="bold" /> {{ next.sourceIds.length ? 'Repasar ahora' : 'Elegir qué estudiar' }}
-        </BaseButton>
+        <div class="mt-4 flex flex-wrap items-center gap-2">
+          <BaseButton size="md" @click="study(next)">
+            <PhBookOpenText :size="18" weight="bold" /> {{ next.sourceIds.length ? 'Repasar ahora' : 'Elegir qué estudiar' }}
+          </BaseButton>
+          <button v-if="next.origin === 'manual'" class="rounded-full bg-white/45 px-3.5 py-2 text-[13.5px] font-bold" @click="openEdit(next)">Cambiar</button>
+        </div>
       </section>
 
       <PhoneCard />
@@ -189,7 +212,7 @@ const toggleFacts = () =>
                 {{ countdown(e) }}{{ e.allDay ? '' : ` · ${hour(e.startsAt)}` }} · {{ e.origin === 'manual' ? 'agregado por ti' : 'de tu calendario' }}
               </p>
             </div>
-            <button class="grid size-9 shrink-0 place-items-center rounded-full" :aria-label="`Opciones de ${e.title}`" @click="menuFor = menuFor === e.id ? null : e.id">
+            <button class="grid size-10 shrink-0 place-items-center rounded-full bg-surface-2" :aria-label="`Opciones de ${e.title}`" @click="menuFor = menuFor === e.id ? null : e.id">
               <PhDotsThreeVertical :size="20" weight="bold" />
             </button>
           </div>
@@ -208,26 +231,48 @@ const toggleFacts = () =>
             </button>
           </div>
           <div v-if="menuFor === e.id" class="absolute right-3 top-12 z-10 w-56 rounded-[18px] bg-surface p-1.5 shadow-float ring-1 ring-line">
-            <button class="w-full rounded-[12px] px-3 py-2.5 text-left text-[14px] font-bold" @click="remove(e)">
+            <button v-if="e.origin === 'manual'" class="w-full rounded-[12px] px-3 py-2.5 text-left text-[14px] font-bold" @click="openEdit(e)">
+              Cambiar fecha o nombre
+            </button>
+            <button class="w-full rounded-[12px] px-3 py-2.5 text-left text-[14px] font-bold text-danger" @click="remove(e)">
               {{ e.origin === 'calendar' ? 'No es un parcial (ocultar)' : 'Borrar' }}
             </button>
           </div>
         </motion.li>
       </ul>
 
+      <section v-if="!cal.exams.length" class="mt-6 flex flex-col items-center rounded-card bg-surface px-6 py-8 text-center ring-1 ring-line">
+        <MascotBlob mood="curious" :size="104" />
+        <span class="mt-3 font-display text-[20px] font-extrabold">Anota tus parciales</span>
+        <span class="mt-1 max-w-[290px] text-[14px] font-medium leading-snug text-ink-2">
+          Escribe la materia y la fecha. Mocca te avisa días antes y te arma el repaso con tus fuentes.
+        </span>
+        <BaseButton class="mt-5" size="lg" variant="primary" @click="openAdd"><PhCalendarPlus :size="20" weight="bold" /> Agregar un parcial</BaseButton>
+      </section>
       <button
-        v-if="!cal.exams.length"
-        class="mt-6 flex w-full flex-col items-center rounded-card border-[2.5px] border-dashed border-ink/15 px-6 py-8 text-center"
+        v-else
+        class="mt-3 flex w-full items-center justify-center gap-2 rounded-[22px] border-[2.5px] border-dashed border-ink/15 py-4 text-[15px] font-bold text-ink-2"
         @click="openAdd"
       >
-        <MascotBlob mood="happy" :size="96" />
-        <span class="mt-3 font-display text-[18px] font-bold">No hay parciales a la vista</span>
-        <span class="mt-1 text-[14px] font-medium text-ink-2">Conecta tu calendario abajo o toca para agregar uno.</span>
+        <PhPlus :size="18" weight="bold" /> Agregar otro parcial
       </button>
 
       <!-- calendario conectado -->
       <section class="mt-8 rounded-card bg-surface p-5 ring-1 ring-line">
-        <p class="flex items-center gap-2 font-display text-[18px] font-extrabold"><PhLink :size="20" weight="bold" /> Calendario de la U</p>
+        <button
+          v-if="!cal.feed.connected"
+          class="flex w-full items-center gap-2 text-left"
+          :aria-expanded="showFeed"
+          @click="showFeed = !showFeed"
+        >
+          <PhLink :size="20" weight="bold" class="shrink-0" />
+          <span class="min-w-0 flex-1">
+            <span class="block font-display text-[17px] font-extrabold">Conectar mi calendario <span class="text-[13px] font-bold text-ink-3">(opcional)</span></span>
+            <span class="block text-[13px] leading-snug text-ink-2">Si tus parciales ya están en Google Calendar o el aula virtual, Mocca los trae solita.</span>
+          </span>
+          <PhCaretDown :size="18" weight="bold" :class="['shrink-0 transition-transform', showFeed && 'rotate-180']" />
+        </button>
+        <p v-else class="flex items-center gap-2 font-display text-[18px] font-extrabold"><PhLink :size="20" weight="bold" /> Calendario de la U</p>
         <template v-if="cal.feed.connected">
           <p class="mt-1 text-[14px] text-ink-2">
             Conectado ({{ cal.feed.hint }}). Lo reviso todos los días; última vez {{ synced }}.
@@ -238,8 +283,8 @@ const toggleFacts = () =>
             <button class="px-3 text-[14px] font-bold text-danger" @click="disconnect">Desconectar</button>
           </div>
         </template>
-        <template v-else>
-          <p class="mt-1 text-[14px] leading-snug text-ink-2">
+        <template v-else-if="showFeed">
+          <p class="mt-3 text-[14px] leading-snug text-ink-2">
             Pega el enlace privado (iCal) de tu calendario y Mocca encontrará tus parciales, quices y exámenes solita.
           </p>
           <input
@@ -304,7 +349,7 @@ const toggleFacts = () =>
     <div v-else-if="!error" class="mt-24 flex justify-center"><MascotBlob mood="thinking" :size="100" /></div>
 
     <!-- agregar parcial -->
-    <BottomSheet :open="adding" title="Agregar parcial" @close="adding = false">
+    <BottomSheet :open="adding" :title="editingExam ? 'Cambiar parcial' : 'Agregar parcial'" @close="adding = false">
       <label class="block text-[13px] font-bold text-ink-2">Materia o nombre</label>
       <input
         v-model="form.title"
@@ -320,6 +365,7 @@ const toggleFacts = () =>
         <label class="block">
           <span class="text-[13px] font-bold text-ink-2">Hora (opcional)</span>
           <input v-model="form.time" type="time" class="mt-1 h-12 w-full rounded-[16px] bg-surface px-3 text-[15px] ring-1 ring-line" />
+          <button v-if="form.time" class="mt-1 text-[12.5px] font-bold text-ink-3 underline" @click="form.time = ''">Quitar hora</button>
         </label>
       </div>
       <p class="mt-4 text-[13px] font-bold text-ink-2">¿Con qué fuentes repasas? <span class="font-medium">(si no eliges, Mocca las busca por el nombre)</span></p>
@@ -327,7 +373,7 @@ const toggleFacts = () =>
       <div class="h-2" />
       <template #footer>
         <BaseButton size="xl" block :disabled="form.title.trim().length < 2 || !form.date" :loading="busy === 'add'" @click="add">
-          <PhCalendarPlus :size="20" weight="bold" /> Guardar parcial
+          <PhCalendarPlus :size="20" weight="bold" /> {{ editingExam ? 'Guardar cambios' : 'Guardar parcial' }}
         </BaseButton>
       </template>
     </BottomSheet>
