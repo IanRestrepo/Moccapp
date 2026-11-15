@@ -7,6 +7,7 @@ process.env.DATABASE_URL = 'pglite://memory'
 process.env.GEMINI_API_KEY = 'test-key-1234567890'
 process.env.PROFILE_CODES = 'ash:codigo-ash-456,magola:codigo-magola-789'
 
+const { signIn } = await import('./_login.js')
 const { createApp } = await import('../src/app.js')
 const { db, closeDb } = await import('../src/db/client.js')
 const { sources } = await import('../src/db/schema.js')
@@ -20,10 +21,7 @@ let s2 = ''
 let sMagola = ''
 const req = (method: string, path: string, cookie: string, body?: unknown) =>
   fetch(`${base}${path}`, { method, headers: { 'Content-Type': 'application/json', cookie }, body: body ? JSON.stringify(body) : undefined })
-const enter = async (code: string) =>
-  (await fetch(`${base}/access`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code }) })).headers
-    .get('set-cookie')!
-    .split(';')[0]!
+const enter = async (code: string) => (await signIn(base, code)).cookie
 
 before(async () => {
   server = createApp().listen(0)

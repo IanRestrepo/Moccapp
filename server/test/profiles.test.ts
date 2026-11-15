@@ -11,6 +11,7 @@ process.env.ACCESS_CODE = 'codigo-viejo-123'
 process.env.PROFILE_CODES = 'ash:codigo-ash-456,magola:codigo-magola-789'
 process.env.EXTRA_PROFILE_CODES = 'mama:codigo-mama-321'
 
+const { signIn } = await import('./_login.js')
 const { createApp } = await import('../src/app.js')
 const { db, closeDb } = await import('../src/db/client.js')
 const { sources } = await import('../src/db/schema.js')
@@ -27,14 +28,7 @@ after(async () => {
   await closeDb()
 })
 
-const enter = async (code: string, ip: string) => {
-  const res = await fetch(`${base}/access`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-Forwarded-For': ip },
-    body: JSON.stringify({ code }),
-  })
-  return { res, cookie: res.headers.get('set-cookie')?.split(';')[0] ?? '' }
-}
+const enter = (code: string, ip: string) => signIn(base, code, ip)
 const get = (path: string, cookie: string) => fetch(`${base}${path}`, { headers: { cookie } })
 // cookie de un dispositivo que entró antes de los perfiles (con ACCESS_CODE)
 const legacy = `vq_access=${createHash('sha256').update('vetquiz-access:codigo-viejo-123').digest('hex')}`
@@ -46,9 +40,14 @@ test('el celular de Ash que ya había entrado sigue siendo Ash; el código viejo
   assert.equal((await enter('codigo-viejo-123', '10.0.0.1')).res.status, 401)
 })
 
+let ashC = ''
+
 test('cada código entra a su perfil', async () => {
   const ash = await enter('codigo-ash-456', '10.0.0.2')
   assert.equal((await ash.res.json()).profile, 'ash')
+  ashC = ash.cookie
+  // ya con usuario, la cookie vieja del código deja de servir
+  assert.equal((await get('/sources', legacy)).status, 401)
   const magola = await enter('codigo-magola-789', '10.0.0.3')
   const body = await magola.res.json()
   assert.deepEqual([body.profile, body.owner, body.name], ['magola', false, 'Magola'])
@@ -71,22 +70,22 @@ test('Magola ve las fuentes de Ash pero no puede cambiarlas, y no tiene premios 
   assert.equal(stats.bones, 0)
   assert.equal(stats.displayName, 'Magola')
   // Ash sigue viendo la suya como propia y sus premios
-  assert.equal((await (await get('/sources', legacy)).json()).sources[0].mine, true)
-  assert.equal((await get('/rewards', legacy)).status, 200)
+  assert.equal((await (await get('/sources', ashC)).json()).sources[0].mine, true)
+  assert.equal((await get('/rewards', ashC)).status, 200)
 })
 
 test('lo que sube Magola no le aparece a Ash', async () => {
   await db.insert(sources).values({ title: 'Apuntes de Magola', kind: 'text', color: 'mint', contentHash: 'h2', status: 'ready', owner: 'magola' })
   const { cookie } = await enter('codigo-magola-789', '10.0.0.5')
   assert.equal((await (await get('/sources', cookie)).json()).sources.length, 2)
-  assert.equal((await (await get('/sources', legacy)).json()).sources.length, 1)
+  assert.equal((await (await get('/sources', ashC)).json()).sources.length, 1)
 })
 
 test('los mensajitos de Mocca son solo para Ash: a Magola no se pueden mandar', async () => {
   const send = (profile: string) =>
     fetch(`${base}/admin/messages`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', cookie: legacy },
+      headers: { 'Content-Type': 'application/json', cookie: ashC },
       body: JSON.stringify({ profile, text: 'hola' }),
     })
   assert.equal((await send('magola')).status, 403)
@@ -108,7 +107,7 @@ test('Mamá entra con su código aparte, sin huesitos, premios ni mensajitos, y 
   const ping = await (await fetch(`${base}/presence`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie: mama.cookie }, body: '{"view":"exam"}' })).json()
   assert.deepEqual(ping.messages, [])
   // Ash y Magola siguen con sus nombres y su fila de siempre
-  assert.equal((await (await get('/stats', legacy)).json()).stats.displayName, 'Ashley')
+  assert.equal((await (await get('/stats', ashC)).json()).stats.displayName, 'Ashley')
   const magola = await enter('codigo-magola-789', '10.0.0.11')
   assert.equal((await (await get('/stats', magola.cookie)).json()).stats.displayName, 'Magola')
 })
@@ -120,13 +119,13 @@ test('Mamá no ve las fuentes de Ash; si sube lo mismo que Ash, tiene su propia 
   const text = 'La célula es la unidad básica de la vida. '.repeat(10)
   const post = (cookie: string) =>
     fetch(`${base}/sources`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify({ kind: 'text', text }) })
-  const fromAsh = await (await post(legacy)).json()
+  const fromAsh = await (await post(ashC)).json()
   const fromMama = await (await post(mama.cookie)).json()
   assert.notEqual(fromMama.source.id, fromAsh.source.id)
   const mine = (await (await get('/sources', mama.cookie)).json()).sources
   assert.deepEqual(mine.map((s: { id: string }) => s.id), [fromMama.source.id])
   // Ash no ve la de Mamá
-  const ash = (await (await get('/sources', legacy)).json()).sources.map((s: { id: string }) => s.id)
+  const ash = (await (await get('/sources', ashC)).json()).sources.map((s: { id: string }) => s.id)
   assert.ok(!ash.includes(fromMama.source.id))
   // y Mamá no puede abrir la de Ash
   assert.equal((await get(`/sources/${fromAsh.source.id}`, mama.cookie)).status, 404)

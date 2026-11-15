@@ -23,7 +23,7 @@ uploadsRouter.post('/blob', async (req, res) => {
     body: req.body as HandleUploadBody,
     request: req,
     onBeforeGenerateToken: async () => {
-      if (!profileOf(req)) throw new AppError(401, 'ACCESS_REQUIRED', 'Escribe tu código de acceso para entrar.')
+      if (!(await profileOf(req))) throw new AppError(401, 'ACCESS_REQUIRED', 'Escribe tu código de acceso para entrar.')
       return { allowedContentTypes: ALLOWED, maximumSizeInBytes: env.UPLOAD_MAX_MB * 1024 * 1024, addRandomSuffix: true }
     },
     onUploadCompleted: async () => {

@@ -20,6 +20,7 @@ webpush.sendNotification = (async (sub: { endpoint: string }, payload: string) =
   return { statusCode: 201, body: '', headers: {} }
 }) as typeof webpush.sendNotification
 
+const { signIn } = await import('./_login.js')
 const { createApp } = await import('../src/app.js')
 const { db, closeDb } = await import('../src/db/client.js')
 const { pushSubscriptions } = await import('../src/db/schema.js')
@@ -39,7 +40,7 @@ after(async () => {
 
 const post = (path: string, body: unknown, cookie = '') =>
   fetch(`${base}${path}`, { method: 'POST', headers: { 'Content-Type': 'application/json', cookie }, body: JSON.stringify(body) })
-const enter = async (code: string) => (await post('/access', { code })).headers.get('set-cookie')!.split(';')[0]!
+const enter = async (code: string) => (await signIn(base, code)).cookie
 const sub = (endpoint: string) => ({ subscription: { endpoint, keys: { p256dh: 'p256dh-de-prueba', auth: 'auth-prueba' } } })
 
 test('cada perfil registra su celular y recibe un aviso de bienvenida', async () => {

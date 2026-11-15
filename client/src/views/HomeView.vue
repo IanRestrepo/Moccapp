@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhArrowRight, PhCalendarDots, PhPuzzlePiece, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun } from '@phosphor-icons/vue'
+import { PhArrowRight, PhCalendarDots, PhPuzzlePiece, PhCaretRight, PhMoon, PhPlus, PhSpeakerHigh, PhSpeakerSlash, PhSun, PhUserCircle } from '@phosphor-icons/vue'
 import { EXAM_LEVEL_LABELS, type CalendarDTO, type ExamHistoryItemDTO, type SourceDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import PhoneCard from '@/components/PhoneCard.vue'
+import AccountSheet from '@/components/AccountSheet.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
 import SourceFolder from '@/components/SourceFolder.vue'
@@ -19,6 +20,7 @@ import { countdown, urgency } from '@/lib/exams'
 
 const router = useRouter()
 const ui = useUiStore()
+const accountOpen = ref(false)
 const sources = useSourcesStore()
 const statsStore = useStatsStore()
 const sound = useSound()
@@ -76,6 +78,9 @@ function startExam() {
         </button>
         <button class="grid size-11 place-items-center rounded-full bg-surface ring-1 ring-line" aria-label="Cambiar tema" @click="theme.toggle()">
           <component :is="theme.isDark.value ? PhSun : PhMoon" :size="20" weight="bold" />
+        </button>
+        <button v-if="ui.accessRequired" class="grid size-11 place-items-center rounded-full bg-surface ring-1 ring-line" aria-label="Mi cuenta" @click="accountOpen = true">
+          <PhUserCircle :size="22" weight="bold" />
         </button>
       </div>
     </header>
@@ -282,5 +287,6 @@ function startExam() {
         </li>
       </ul>
     </template>
+    <AccountSheet :open="accountOpen" @close="accountOpen = false" />
   </main>
 </template>

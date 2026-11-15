@@ -56,7 +56,8 @@ const networkError = () =>
 
 /** Si el servidor pide código de acceso, App.vue muestra la pantalla de entrada */
 export const LOCKED_EVENT = 'vq:locked'
-const signalLocked = (code: string) => code === 'ACCESS_REQUIRED' && window.dispatchEvent(new Event(LOCKED_EVENT))
+const signalLocked = (code: string) =>
+  (code === 'ACCESS_REQUIRED' || code === 'ACCOUNT_REQUIRED') && window.dispatchEvent(new Event(LOCKED_EVENT))
 
 async function toError(res: Response): Promise<ApiRequestError> {
   const body = (await res.json().catch(() => null)) as ApiError | null
@@ -143,11 +144,29 @@ async function uploadViaBlob(file: File, opts: { title?: string; onProgress?: (r
   return res
 }
 
+export interface AccessStatus {
+  required: boolean
+  granted: boolean
+  /** entró con su código: falta crear usuario y contraseña */
+  needsAccount?: boolean
+  profile?: string | null
+  owner?: boolean
+  name?: string | null
+  username?: string | null
+  blobUploads?: boolean
+}
+
 export const api = {
   // Código de acceso (solo en la nube)
-  accessStatus: () =>
-    request<{ required: boolean; granted: boolean; profile?: string | null; owner?: boolean; name?: string | null; blobUploads?: boolean }>('GET', '/access'),
-  enter: (code: string) => request<{ granted: boolean }>('POST', '/access', { code }),
+  accessStatus: () => request<AccessStatus>('GET', '/access'),
+  /** usuario y contraseña */
+  login: (username: string, password: string) => request<AccessStatus>('POST', '/access/login', { username, password }),
+  /** primera vez: entrar con el código para crear el usuario */
+  enterCode: (code: string) => request<AccessStatus>('POST', '/access/code', { code }),
+  setupAccount: (username: string, password: string) => request<AccessStatus>('POST', '/access/setup', { username, password }),
+  resetPassword: (code: string, password: string) => request<AccessStatus>('POST', '/access/reset', { code, password }),
+  changePassword: (current: string, password: string) => request<AccessStatus>('POST', '/access/password', { current, password }),
+  logout: () => request<{ ok: true }>('POST', '/access/logout'),
 
   // Fuentes
   listSources: () => request<{ sources: SourceDTO[] }>('GET', '/sources').then((r) => r.sources),

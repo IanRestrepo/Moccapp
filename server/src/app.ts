@@ -2,7 +2,7 @@ import path from 'node:path'
 import cors from 'cors'
 import express from 'express'
 import { env } from './env.js'
-import { accessStatus, enterAccess, requireAccess } from './lib/access.js'
+import { accessStatus, changePassword, enterAccess, enterCode, login, logout, requireAccess, resetPassword, setupAccount } from './lib/access.js'
 import { profileNames } from './lib/profile.js'
 import { AppError, errorHandler } from './lib/errors.js'
 import { examsRouter } from './routes/exams.js'
@@ -34,6 +34,12 @@ export function createApp() {
   app.use('/api', requireAccess)
   app.get('/api/access', accessStatus)
   app.post('/api/access', enterAccess)
+  app.post('/api/access/login', login)
+  app.post('/api/access/code', enterCode)
+  app.post('/api/access/setup', setupAccount)
+  app.post('/api/access/reset', resetPassword)
+  app.post('/api/access/password', changePassword)
+  app.post('/api/access/logout', logout)
   app.use('/api/sources', sourcesRouter)
   app.use('/api/exams', examsRouter)
   app.use('/api/stats', statsRouter)

@@ -14,6 +14,8 @@ import { useUiStore } from '@/stores/ui'
 
 // En la nube la API pide código de acceso; en local nunca aparece
 const locked = ref(false)
+const needsAccount = ref(false)
+const who = ref<string | null>(null)
 const lock = () => (locked.value = true)
 // Al volver a la app (otra pestaña, celular bloqueado…) se refrescan fuentes y stats: nada queda viejo
 const sources = useSourcesStore()
@@ -74,7 +76,12 @@ watch(() => route.path, ping)
 onMounted(async () => {
   window.addEventListener(LOCKED_EVENT, lock)
   const status = await api.accessStatus().catch(() => null)
-  if (status?.required && !status.granted) locked.value = true
+  if (status?.required && !status.granted) {
+    locked.value = true
+    needsAccount.value = !!status.needsAccount
+    who.value = status.name ?? null
+  }
+  if (status) ui.setAccount(status.required, status.username ?? null)
   // solo es Ash si el servidor lo dice explícitamente
   if (status?.granted) ui.setProfile(status.owner === true, status.name ?? null)
   // si estaba en Premios y resultó no ser Ash, fuera
@@ -87,7 +94,7 @@ onBeforeUnmount(() => window.removeEventListener(LOCKED_EVENT, lock))
 <template>
   <!-- reducedMotion="user": motion-v respeta prefers-reduced-motion en todos los componentes -->
   <MotionConfig reduced-motion="user">
-    <AccessGate v-if="locked" />
+    <AccessGate v-if="locked" :needs-account="needsAccount" :name="who" />
     <template v-else>
       <RouterView />
       <BottomNav v-if="$route.meta.nav" />

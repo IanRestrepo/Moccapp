@@ -1,14 +1,21 @@
-// Código de acceso para cuando la app está en internet. Sin ACCESS_CODE (local) no hace nada.
-// Se escribe una vez por dispositivo; queda una cookie httpOnly de 1 año.
-import { createHash, timingSafeEqual } from 'node:crypto'
+// Entrada a la app cuando está en internet (sin códigos configurados, en local, no hace nada).
+// Se entra con usuario y contraseña. La primera vez, cada persona entra con su código de siempre
+// y crea su usuario y contraseña; desde ahí el código ya solo sirve para recuperar la contraseña.
+// La sesión es una cookie httpOnly de 1 año.
+import { createHash, randomBytes, scrypt as scryptCb, timingSafeEqual } from 'node:crypto'
+import { promisify } from 'node:util'
 import type { Request, RequestHandler, Response } from 'express'
+import { eq } from 'drizzle-orm'
 import { z } from 'zod'
+import { db } from '../db/client.js'
+import { accounts } from '../db/schema.js'
 import { env } from '../env.js'
 import { AppError } from './errors.js'
 import { OWNER, displayNameFor, isOwner, runAs } from './profile.js'
 
 const COOKIE = 'vq_access'
 const ONE_YEAR = 365 * 24 * 3600
+const scrypt = promisify(scryptCb) as (pw: string, salt: Buffer, len: number) => Promise<Buffer>
 
 /** El token depende del código: si ella cambia ACCESS_CODE, todos los dispositivos tienen que volver a entrar */
 const tokenFor = (code: string) => createHash('sha256').update(`vetquiz-access:${code}`).digest('hex')
@@ -23,29 +30,76 @@ function readCookie(req: Request, name: string): string | null {
   return null
 }
 
-/** Códigos válidos para entrar: con PROFILE_CODES, uno por perfil; si no, ACCESS_CODE es de la dueña */
+/** Códigos válidos: con PROFILE_CODES, uno por perfil; si no, ACCESS_CODE es de la dueña */
 const loginCodes = () => (env.PROFILE_CODES.length ? env.PROFILE_CODES : env.ACCESS_CODE ? [{ name: OWNER, code: env.ACCESS_CODE }] : [])
 export const accessEnabled = () => loginCodes().length > 0
 const profileToken = (name: string, code: string) => `${name}.${tokenFor(`${name}:${code}`)}`
 
-/** Perfil de quien hace la petición, o null si no tiene acceso */
-export function profileOf(req: Request): string | null {
-  if (!accessEnabled()) return OWNER
+// ── contraseñas ──────────────────────────────────────────────
+
+export async function hashPassword(password: string): Promise<string> {
+  const salt = randomBytes(16)
+  const hash = await scrypt(password, salt, 64)
+  return `scrypt$${salt.toString('hex')}$${hash.toString('hex')}`
+}
+
+export async function checkPassword(password: string, stored: string): Promise<boolean> {
+  const [kind, salt, hash] = stored.split('$')
+  if (kind !== 'scrypt' || !salt || !hash) return false
+  const got = await scrypt(password, Buffer.from(salt, 'hex'), 64)
+  const want = Buffer.from(hash, 'hex')
+  return got.length === want.length && timingSafeEqual(got, want)
+}
+
+/** Cookie de una cuenta: cambia si cambia la contraseña (así cambiarla saca a los demás dispositivos) */
+const accountToken = (profile: string, passwordHash: string) =>
+  `acct.${profile}.${createHash('sha256').update(`vetquiz-account:${profile}:${passwordHash}`).digest('hex')}`
+
+const accountOf = async (profile: string) => (await db.select().from(accounts).where(eq(accounts.profile, profile)))[0] ?? null
+
+type Who = { profile: string; viaCode: boolean } | null
+
+/** Quién hace la petición. viaCode = entró con el código y todavía no tiene usuario */
+async function whoIs(req: Request): Promise<Who> {
+  if (!accessEnabled()) return { profile: OWNER, viaCode: false }
   const cookie = readCookie(req, COOKIE)
   if (!cookie) return null
-  // dispositivos que entraron antes de los perfiles (con ACCESS_CODE): siguen siendo de la dueña
-  if (env.ACCESS_CODE && sameToken(cookie, tokenFor(env.ACCESS_CODE))) return OWNER
-  const name = cookie.split('.')[0]!
-  const p = loginCodes().find((x) => x.name === name)
-  return p && sameToken(cookie, profileToken(p.name, p.code)) ? p.name : null
+
+  if (cookie.startsWith('acct.')) {
+    const [, profile] = cookie.split('.')
+    if (!profile || !loginCodes().some((p) => p.name === profile)) return null
+    const acc = await accountOf(profile)
+    return acc && sameToken(cookie, accountToken(profile, acc.passwordHash)) ? { profile, viaCode: false } : null
+  }
+
+  // entró con el código: vale solo mientras ese perfil no haya creado su usuario
+  let profile: string | null = null
+  // dispositivos que entraron antes de los perfiles (con ACCESS_CODE): son de la dueña
+  if (env.ACCESS_CODE && sameToken(cookie, tokenFor(env.ACCESS_CODE))) profile = OWNER
+  else {
+    const name = cookie.split('.')[0]!
+    const p = loginCodes().find((x) => x.name === name)
+    if (p && sameToken(cookie, profileToken(p.name, p.code))) profile = p.name
+  }
+  if (!profile) return null
+  return (await accountOf(profile)) ? null : { profile, viaCode: true }
 }
+
+/** Perfil de quien hace la petición, o null si no tiene acceso */
+export async function profileOf(req: Request): Promise<string | null> {
+  return (await whoIs(req))?.profile ?? null
+}
+
+const OPEN_PATHS = new Set(['/health', '/access', '/access/login', '/access/code', '/access/reset', '/access/logout'])
 
 /** Protege toda la API excepto salud y la propia entrada; el resto de la petición corre como ese perfil */
 export const requireAccess: RequestHandler = (req, _res, next) => {
-  const profile = profileOf(req)
-  if (profile) return runAs(profile, next)
-  if (req.path === '/health' || req.path === '/access') return next()
-  next(new AppError(401, 'ACCESS_REQUIRED', 'Escribe tu código de acceso para entrar.'))
+  whoIs(req).then((who) => {
+    if (who && !who.viaCode) return runAs(who.profile, next)
+    if (OPEN_PATHS.has(req.path) || (who && req.path === '/access/setup')) return who ? runAs(who.profile, next) : next()
+    if (who) return next(new AppError(401, 'ACCOUNT_REQUIRED', 'Primero crea tu usuario y contraseña.'))
+    next(new AppError(401, 'ACCESS_REQUIRED', 'Entra con tu usuario y contraseña.'))
+  }, next)
 }
 
 /** Huesitos y premios son solo de la dueña */
@@ -54,49 +108,151 @@ export const requireOwner: RequestHandler = (_req, _res, next) => {
   next(new AppError(403, 'OWNER_ONLY', 'Esta parte es solo para Ash.'))
 }
 
-// Freno simple contra adivinar el código: 10 intentos fallidos cada 10 minutos por IP
+// Freno simple contra adivinar: 10 intentos fallidos cada 10 minutos por IP
 const attempts = new Map<string, { n: number; until: number }>()
 
-function statusFor(profile: string | null) {
+function guard(key: string) {
+  const a = attempts.get(key)
+  if (a && a.until > Date.now() && a.n >= 10) throw new AppError(429, 'TOO_MANY_ATTEMPTS', 'Demasiados intentos. Espera unos minutos.')
+  return {
+    fail() {
+      const now = Date.now()
+      attempts.set(key, { n: (a && a.until > now ? a.n : 0) + 1, until: now + 10 * 60_000 })
+    },
+    ok: () => attempts.delete(key),
+  }
+}
+
+async function statusFor(who: Who) {
+  const acc = who && !who.viaCode && accessEnabled() ? await accountOf(who.profile) : null
   return {
     required: accessEnabled(),
-    granted: !!profile,
-    profile,
-    owner: profile === OWNER,
-    name: profile ? displayNameFor(profile) : null,
+    granted: !!who && !who.viaCode,
+    /** entró con el código: le falta crear su usuario */
+    needsAccount: !!who?.viaCode,
+    profile: who?.profile ?? null,
+    owner: who?.profile === OWNER,
+    name: who ? displayNameFor(who.profile) : null,
+    username: acc?.username ?? null,
     /** en Vercel los archivos se suben directo a Vercel Blob */
     blobUploads: !!env.BLOB_READ_WRITE_TOKEN,
   }
 }
 
-export function accessStatus(req: Request, res: Response) {
-  res.json(statusFor(profileOf(req)))
+const cookieOpts = () => ({
+  httpOnly: true,
+  sameSite: 'lax' as const,
+  secure: env.NODE_ENV === 'production',
+  maxAge: ONE_YEAR * 1000,
+  path: '/',
+})
+
+export async function accessStatus(req: Request, res: Response) {
+  res.json(await statusFor(await whoIs(req)))
 }
 
-export function enterAccess(req: Request, res: Response) {
-  const ip = req.ip ?? 'unknown'
-  const now = Date.now()
-  const a = attempts.get(ip)
-  if (a && a.until > now && a.n >= 10) throw new AppError(429, 'TOO_MANY_ATTEMPTS', 'Demasiados intentos. Espera unos minutos.')
+// el celular pone mayúscula al inicio o espacios: no importan
+const loose = (c: string) => c.replace(/\s+/g, '').toLowerCase()
+const findCode = (code: string) => loginCodes().find((p) => sameToken(tokenFor(loose(code)), tokenFor(loose(p.code))))
 
+const Username = z
+  .string()
+  .trim()
+  .toLowerCase()
+  .regex(/^[a-z0-9._ñ-]{3,24}$/, 'El usuario va de 3 a 24 letras o números, sin espacios.')
+const Password = z.string().min(6, 'La contraseña necesita al menos 6 caracteres.').max(200)
+
+/** Entrar con usuario y contraseña */
+export async function login(req: Request, res: Response) {
+  const g = guard(`login:${req.ip ?? 'unknown'}`)
+  const body = z.object({ username: z.string().trim().toLowerCase().min(1).max(60), password: z.string().min(1).max(200) }).parse(req.body)
+  const acc = (await db.select().from(accounts).where(eq(accounts.username, body.username)))[0]
+  const ok = acc && loginCodes().some((p) => p.name === acc.profile) && (await checkPassword(body.password, acc.passwordHash))
+  if (!ok) {
+    g.fail()
+    throw new AppError(401, 'WRONG_LOGIN', 'Usuario o contraseña incorrectos.')
+  }
+  g.ok()
+  res.cookie(COOKIE, accountToken(acc.profile, acc.passwordHash), cookieOpts())
+  res.json(await statusFor({ profile: acc.profile, viaCode: false }))
+}
+
+/** Primera vez: entra con su código para poder crear su usuario */
+export async function enterCode(req: Request, res: Response) {
+  const g = guard(`code:${req.ip ?? 'unknown'}`)
   const { code } = z.object({ code: z.string().trim().min(1).max(200) }).parse(req.body)
-  // el celular pone mayúscula al inicio o espacios: no importan
-  const loose = (c: string) => c.replace(/\s+/g, '').toLowerCase()
-  const match = loginCodes().find((p) => sameToken(tokenFor(loose(code)), tokenFor(loose(p.code))))
+  const match = findCode(code)
   if (!match) {
-    attempts.set(ip, { n: (a && a.until > now ? a.n : 0) + 1, until: now + 10 * 60_000 })
+    g.fail()
     throw new AppError(401, 'WRONG_CODE', 'Ese código no es. Revisa mayúsculas y espacios.')
   }
-  attempts.delete(ip)
-  res.cookie(COOKIE, profileToken(match.name, match.code), {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: env.NODE_ENV === 'production',
-    maxAge: ONE_YEAR * 1000,
-    path: '/',
-  })
-  res.json(statusFor(match.name))
+  g.ok()
+  if (await accountOf(match.name))
+    throw new AppError(409, 'ACCOUNT_EXISTS', 'Ya creaste tu usuario: entra con él. Si olvidaste la contraseña, toca "Olvidé mi contraseña".')
+  res.cookie(COOKIE, profileToken(match.name, match.code), cookieOpts())
+  res.json(await statusFor({ profile: match.name, viaCode: true }))
 }
+
+/** Crear el usuario y la contraseña (solo quien entró con su código y aún no tiene) */
+export async function setupAccount(req: Request, res: Response) {
+  const who = await whoIs(req)
+  if (!who?.viaCode) throw new AppError(400, 'ALREADY_SET', 'Ya tienes usuario y contraseña.')
+  const { username, password } = z.object({ username: Username, password: Password }).parse(req.body)
+  const taken = (await db.select().from(accounts).where(eq(accounts.username, username)))[0]
+  if (taken) throw new AppError(409, 'USERNAME_TAKEN', 'Ese usuario ya existe. Prueba con otro.')
+  const passwordHash = await hashPassword(password)
+  await db.insert(accounts).values({ profile: who.profile, username, passwordHash })
+  res.cookie(COOKIE, accountToken(who.profile, passwordHash), cookieOpts())
+  res.json(await statusFor({ profile: who.profile, viaCode: false }))
+}
+
+/** Olvidó la contraseña: con su código pone una nueva (y los demás dispositivos tienen que volver a entrar) */
+export async function resetPassword(req: Request, res: Response) {
+  const g = guard(`code:${req.ip ?? 'unknown'}`)
+  const { code, password } = z.object({ code: z.string().trim().min(1).max(200), password: Password }).parse(req.body)
+  const match = findCode(code)
+  if (!match) {
+    g.fail()
+    throw new AppError(401, 'WRONG_CODE', 'Ese código no es. Revisa mayúsculas y espacios.')
+  }
+  g.ok()
+  const acc = await accountOf(match.name)
+  if (!acc) {
+    // todavía no tenía usuario: igual que entrar con el código
+    res.cookie(COOKIE, profileToken(match.name, match.code), cookieOpts())
+    return res.json(await statusFor({ profile: match.name, viaCode: true }))
+  }
+  const passwordHash = await hashPassword(password)
+  await db.update(accounts).set({ passwordHash, updatedAt: new Date() }).where(eq(accounts.profile, match.name))
+  res.cookie(COOKIE, accountToken(match.name, passwordHash), cookieOpts())
+  res.json(await statusFor({ profile: match.name, viaCode: false }))
+}
+
+/** Cambiar la contraseña desde adentro (pide la actual) */
+export async function changePassword(req: Request, res: Response) {
+  const who = await whoIs(req)
+  if (!who || who.viaCode || !accessEnabled()) throw new AppError(400, 'NO_ACCOUNT', 'Primero crea tu usuario y contraseña.')
+  const g = guard(`change:${req.ip ?? 'unknown'}`)
+  const { current, password } = z.object({ current: z.string().min(1).max(200), password: Password }).parse(req.body)
+  const acc = (await accountOf(who.profile))!
+  if (!(await checkPassword(current, acc.passwordHash))) {
+    g.fail()
+    throw new AppError(401, 'WRONG_PASSWORD', 'La contraseña actual no es esa.')
+  }
+  g.ok()
+  const passwordHash = await hashPassword(password)
+  await db.update(accounts).set({ passwordHash, updatedAt: new Date() }).where(eq(accounts.profile, who.profile))
+  res.cookie(COOKIE, accountToken(who.profile, passwordHash), cookieOpts())
+  res.json(await statusFor(who))
+}
+
+export function logout(_req: Request, res: Response) {
+  res.clearCookie(COOKIE, { path: '/' })
+  res.json({ ok: true })
+}
+
+/** Compatibilidad: la app vieja en caché manda el código a POST /api/access */
+export const enterAccess = enterCode
 
 // ── Administrador (página de premios) ────────────────────────
 // En local sin ADMIN_CODE queda abierta; en producción sin ADMIN_CODE queda deshabilitada

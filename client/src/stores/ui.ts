@@ -36,5 +36,12 @@ export const useUiStore = defineStore('ui', () => {
     known.value = true
     markReady()
   }
-  return { newSourceOpen, openNewSource, closeNewSource, owner, profileName, known, ownerKnown, setProfile }
+  /** cuenta: solo en internet hay usuario y contraseña */
+  const username = ref<string | null>(null)
+  const accessRequired = ref(false)
+  function setAccount(required: boolean, user: string | null) {
+    accessRequired.value = required
+    username.value = user
+  }
+  return { username, accessRequired, setAccount, newSourceOpen, openNewSource, closeNewSource, owner, profileName, known, ownerKnown, setProfile }
 })

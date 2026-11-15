@@ -451,3 +451,15 @@ export const moccaCards = pgTable(
   },
   (t) => [primaryKey({ columns: [t.profile, t.mood] })],
 )
+
+// ── cuentas: usuario y contraseña ────────────────────────────
+// Una por perfil. La contraseña se guarda como scrypt (sal + hash), nunca en claro.
+
+export const accounts = pgTable('accounts', {
+  profile: text('profile').primaryKey(),
+  /** en minúsculas, único */
+  username: text('username').notNull().unique(),
+  passwordHash: text('password_hash').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+})
