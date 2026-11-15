@@ -1,13 +1,15 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { PhArrowLeft, PhCards, PhExam, PhFolderSimpleMinus, PhPencilSimple, PhPlus, PhTrash } from '@phosphor-icons/vue'
+import { PhArrowLeft, PhCards, PhDotsThreeVertical, PhExam, PhPencilSimple, PhPlus, PhTrash } from '@phosphor-icons/vue'
 import { SOURCE_COLORS, type SourceDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import BottomSheet from '@/components/ui/BottomSheet.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import SourceFolder from '@/components/SourceFolder.vue'
 import SourcePicker from '@/components/collections/SourcePicker.vue'
+import SourceActionsSheet from '@/components/SourceActionsSheet.vue'
+import { useLongPress } from '@/composables/useLongPress'
 import { api, ApiRequestError } from '@/api/client'
 import { colorClasses } from '@/lib/motion'
 import { useCollectionsStore } from '@/stores/collections'
@@ -30,7 +32,12 @@ const inside = computed(() => (collection.value?.sourceIds ?? []).map((s) => sou
 const readyIds = computed(() => inside.value.filter((s) => s.status === 'ready').map((s) => s.id))
 const questions = computed(() => inside.value.reduce((a, s) => a + s.bank.total, 0))
 
+/** Fuente con la hoja de opciones abierta (botón ⋮ o mantener presionado) */
+const actionsFor = ref<SourceDTO | null>(null)
+const { bind: longPress, fired } = useLongPress<SourceDTO>((s) => (actionsFor.value = s))
+
 function openSource(s: SourceDTO) {
+  if (fired()) return
   if (s.status === 'ready') router.push(`/guia/${s.id}`)
   else if (s.status === 'error') api.retrySource(s.id).then(sources.upsert)
 }
@@ -61,7 +68,10 @@ async function saveEdit() {
   await collections.update(id, { name: name.value.trim() }).catch(() => (error.value = 'No se pudo renombrar.'))
   editing.value = false
 }
-const takeOut = (s: SourceDTO) => collections.takeOut(id, s.id).catch(() => (error.value = 'No se pudo sacar.'))
+const takeOut = (s: SourceDTO) => {
+  actionsFor.value = null
+  collections.takeOut(id, s.id).catch(() => (error.value = 'No se pudo sacar.'))
+}
 async function removeCollection() {
   if (!confirm(`¿Borrar la carpeta «${collection.value?.name}»? Las fuentes NO se borran: quedan sueltas.`)) return
   await collections.remove(id)
@@ -109,13 +119,13 @@ async function removeCollection() {
 
       <div v-if="inside.length" class="mt-4 grid grid-cols-2 gap-x-3 gap-y-5 sm:grid-cols-3">
         <div v-for="s in inside" :key="s.id" class="relative">
-          <SourceFolder :source="s" @click="openSource(s)" />
+          <SourceFolder :source="s" v-bind="longPress(s)" @click="openSource(s)" />
           <button
-            class="absolute right-1 top-1 z-10 grid size-9 place-items-center rounded-full bg-white/70 text-on-color shadow-soft"
-            :aria-label="`Sacar ${s.title} de la carpeta`"
-            @click.stop="takeOut(s)"
+            class="absolute right-0.5 top-0.5 z-[2] grid size-11 place-items-center rounded-full bg-white text-[#2a1810] shadow-soft ring-2 ring-[#2a1810]/10"
+            :aria-label="`Opciones de ${s.title}`"
+            @click.stop="actionsFor = s"
           >
-            <PhFolderSimpleMinus :size="20" weight="bold" />
+            <PhDotsThreeVertical :size="22" weight="bold" />
           </button>
         </div>
       </div>
@@ -139,6 +149,13 @@ async function removeCollection() {
       <p class="mt-3 font-display text-[18px] font-bold">Esta carpeta ya no existe</p>
       <BaseButton class="mt-4" size="md" @click="router.push('/fuentes')">Ver mis fuentes</BaseButton>
     </div>
+
+    <SourceActionsSheet
+      :source="actionsFor"
+      in-collection
+      @close="actionsFor = null"
+      @take-out="takeOut"
+    />
 
     <!-- agregar fuentes -->
     <BottomSheet :open="adding" title="Agregar a la carpeta" @close="adding = false">
