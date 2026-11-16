@@ -1,7 +1,7 @@
 import { Router } from 'express'
 import { z } from 'zod'
 import { PresencePingSchema, RewardInputSchema, SendMoccaMessageSchema } from '@vetquiz/shared'
-import { adminStatus, enterAdmin, isAdmin, requireAdmin, requireOwner } from '../lib/access.js'
+import { adminSetAccount, adminStatus, enterAdmin, listAccounts, isAdmin, requireAdmin, requireOwner } from '../lib/access.js'
 import { Errors } from '../lib/errors.js'
 import { env } from '../env.js'
 import {
@@ -114,6 +114,15 @@ adminRouter.get('/overview', async (_req, res) => {
     }),
   )
   res.json({ people })
+})
+
+// Cuentas: usuario de cada persona y poner contraseña nueva
+adminRouter.get('/accounts', async (_req, res) => {
+  res.json({ accounts: await listAccounts() })
+})
+
+adminRouter.put('/accounts/:profile', async (req, res) => {
+  res.json({ account: await adminSetAccount(String(req.params.profile), req.body) })
 })
 
 // Mensajitos de Mocca

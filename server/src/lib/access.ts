@@ -97,6 +97,8 @@ export const requireAccess: RequestHandler = (req, _res, next) => {
   whoIs(req).then((who) => {
     if (who && !who.viaCode) return runAs(who.profile, next)
     if (OPEN_PATHS.has(req.path) || (who && req.path === '/access/setup')) return who ? runAs(who.profile, next) : next()
+    // el panel de administrador tiene su propio código (lo revisa requireAdmin): no necesita cuenta en la app
+    if (req.path.startsWith('/admin/')) return next()
     if (who) return next(new AppError(401, 'ACCOUNT_REQUIRED', 'Primero crea tu usuario y contraseña.'))
     next(new AppError(401, 'ACCESS_REQUIRED', 'Entra con tu usuario y contraseña.'))
   }, next)
@@ -249,6 +251,31 @@ export async function changePassword(req: Request, res: Response) {
 export function logout(_req: Request, res: Response) {
   res.clearCookie(COOKIE, { path: '/' })
   res.json({ ok: true })
+}
+
+// ── administrador: ver las cuentas y ponerles contraseña ─────
+
+export async function listAccounts() {
+  const rows = await db.select().from(accounts)
+  return loginCodes().map((p) => {
+    const acc = rows.find((r) => r.profile === p.name)
+    return { profile: p.name, name: displayNameFor(p.name), username: acc?.username ?? null, updatedAt: acc?.updatedAt.toISOString() ?? null }
+  })
+}
+
+/** El administrador le pone usuario y/o contraseña a un perfil (sus otros dispositivos tienen que volver a entrar) */
+export async function adminSetAccount(profile: string, body: unknown) {
+  if (!loginCodes().some((p) => p.name === profile)) throw new AppError(404, 'NOT_FOUND', 'Esa persona no existe.')
+  const { username, password } = z.object({ username: Username.optional(), password: Password }).parse(body)
+  const acc = await accountOf(profile)
+  const name = username ?? acc?.username
+  if (!name) throw new AppError(400, 'USERNAME_REQUIRED', 'Todavía no tiene usuario: escribe uno.')
+  const taken = (await db.select().from(accounts).where(eq(accounts.username, name)))[0]
+  if (taken && taken.profile !== profile) throw new AppError(409, 'USERNAME_TAKEN', 'Ese usuario ya es de otra persona.')
+  const passwordHash = await hashPassword(password)
+  if (acc) await db.update(accounts).set({ username: name, passwordHash, updatedAt: new Date() }).where(eq(accounts.profile, profile))
+  else await db.insert(accounts).values({ profile, username: name, passwordHash })
+  return (await listAccounts()).find((a) => a.profile === profile)!
 }
 
 /** Compatibilidad: la app vieja en caché manda el código a POST /api/access */

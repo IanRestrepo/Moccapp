@@ -156,6 +156,13 @@ export interface AccessStatus {
   blobUploads?: boolean
 }
 
+export interface AdminAccount {
+  profile: string
+  name: string
+  username: string | null
+  updatedAt: string | null
+}
+
 export const api = {
   // Código de acceso (solo en la nube)
   accessStatus: () => request<AccessStatus>('GET', '/access'),
@@ -268,6 +275,9 @@ export const api = {
   adminMessages: () => request<{ messages: SentMoccaMessageDTO[] }>('GET', '/admin/messages').then((r) => r.messages),
   sendMoccaMessage: (body: { profile: string; text: string; mood: MoccaMessageMood; push: boolean }) =>
     request<{ message: SentMoccaMessageDTO }>('POST', '/admin/messages', body).then((r) => r.message),
+  adminAccounts: () => request<{ accounts: AdminAccount[] }>('GET', '/admin/accounts').then((r) => r.accounts),
+  adminSetAccount: (profile: string, body: { username?: string; password: string }) =>
+    request<{ account: AdminAccount }>('PUT', `/admin/accounts/${profile}`, body).then((r) => r.account),
   adminStatus: () => request<{ required: boolean; granted: boolean; disabled: boolean }>('GET', '/admin/status'),
   adminLogin: (code: string) => request<{ granted: boolean }>('POST', '/admin/login', { code }),
   adminRewards: () => request<AdminRewardsDTO>('GET', '/admin/rewards'),

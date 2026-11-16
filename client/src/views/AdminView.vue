@@ -35,6 +35,7 @@ import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
 import AdminMessages from '@/components/admin/AdminMessages.vue'
+import AdminAccounts from '@/components/admin/AdminAccounts.vue'
 import { api, ApiRequestError } from '@/api/client'
 import { relativeDay } from '@/lib/format'
 import { usePhone } from '@/composables/usePhone'
@@ -475,6 +476,8 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
             <span class="block text-[13px] text-ink-2">Notificación en este celular o computador, además del WhatsApp.</span>
           </span>
         </button>
+
+        <AdminAccounts @toast="say" />
 
         <!-- regalar -->
         <h2 class="mt-8 text-[22px] font-bold">Regalar huesitos</h2>

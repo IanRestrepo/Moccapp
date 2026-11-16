@@ -16,7 +16,8 @@ import { useUiStore } from '@/stores/ui'
 const locked = ref(false)
 const needsAccount = ref(false)
 const who = ref<string | null>(null)
-const lock = () => (locked.value = true)
+// el panel de administrador tiene su propio código: no pide cuenta de la app
+const lock = () => (locked.value = !route.path.startsWith('/admin'))
 // Al volver a la app (otra pestaña, celular bloqueado…) se refrescan fuentes y stats: nada queda viejo
 const sources = useSourcesStore()
 const ui = useUiStore()
@@ -76,7 +77,8 @@ watch(() => route.path, ping)
 onMounted(async () => {
   window.addEventListener(LOCKED_EVENT, lock)
   const status = await api.accessStatus().catch(() => null)
-  if (status?.required && !status.granted) {
+  await router.isReady()
+  if (status?.required && !status.granted && !route.path.startsWith('/admin')) {
     locked.value = true
     needsAccount.value = !!status.needsAccount
     who.value = status.name ?? null

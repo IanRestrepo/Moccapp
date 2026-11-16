@@ -118,6 +118,22 @@ test('salir borra la cookie', async () => {
   assert.match(out.res.headers.get('set-cookie')!, /vq_access=;/)
 })
 
+test('el administrador ve las cuentas y le pone contraseña nueva a una persona (sin tener cuenta en la app)', async () => {
+  const put = (profile: string, body: unknown) =>
+    fetch(`${base}/admin/accounts/${profile}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  const list = (await (await get('/admin/accounts')).json()).accounts
+  assert.deepEqual(list.map((a: { username: string }) => a.username), ['ashley', 'magola'])
+  assert.equal((await put('nadie', { password: 'Clave-Admin1' })).status, 404)
+  assert.equal((await put('ash', { password: '123' })).status, 400)
+  assert.equal((await put('ash', { username: 'magola', password: 'Clave-Admin1' })).status, 409)
+  const before = await post('/access/login', { username: 'ashley', password: 'nueva-clave' })
+  assert.equal((await put('ash', { password: 'Clave-Admin1' })).status, 200)
+  // la contraseña distingue mayúsculas; los dispositivos con la vieja salen
+  assert.equal((await post('/access/login', { username: 'ashley', password: 'clave-admin1' })).res.status, 401)
+  assert.equal((await post('/access/login', { username: 'ashley', password: 'Clave-Admin1' })).res.status, 200)
+  assert.equal((await get('/sources', before.cookie)).status, 401)
+})
+
 test('10 intentos fallidos seguidos → 429 por un rato', async () => {
   for (let i = 0; i < 10; i++) assert.equal((await post('/access/login', { username: 'ashley', password: `malo-${i}` }, '', true)).res.status, 401)
   assert.equal((await post('/access/login', { username: 'ashley', password: 'nueva-clave' }, '', true)).res.status, 429)
