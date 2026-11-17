@@ -60,5 +60,20 @@ test('todos sin cuota → mensaje claro de cuota agotada', async () => {
   }).catch((e) => e)
   const app = classifyGeminiError(err)
   assert.equal(app.code, 'AI_QUOTA')
-  assert.match(app.message, /cuota de Gemini/)
+  assert.match(app.message, /límite de cuota/)
+})
+
+test('todos bloqueados: recargar no consume nuevas llamadas y respeta retryDelay', async () => {
+  let calls = 0
+  let now = 1000
+  const call = async () => { calls++; throw quota() }
+  await assert.rejects(withModelFallback(MODELS, call, () => now))
+  assert.equal(calls, 3)
+  const error = await withModelFallback(MODELS, call, () => now).catch(e => e)
+  assert.equal(classifyGeminiError(error).code, 'AI_QUOTA')
+  assert.equal(calls, 3)
+  assert.doesNotMatch(error.message, /por hoy|en unas horas|facturación/)
+  now += 61000
+  await assert.rejects(withModelFallback(MODELS, call, () => now))
+  assert.equal(calls, 6)
 })

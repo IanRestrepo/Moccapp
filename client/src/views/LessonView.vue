@@ -4,7 +4,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { motion, AnimatePresence } from 'motion-v'
 import confetti from 'canvas-confetti'
 import { PhCheckCircle, PhExam, PhStar, PhXCircle, PhX } from '@phosphor-icons/vue'
-import type { PathCompleteResponse, PathLessonDTO, StudyCardDTO } from '@vetquiz/shared'
+import type { Answer, PathCompleteResponse, PathLessonDTO, StudyCardDTO } from '@vetquiz/shared'
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import ChoiceQuestion from '@/components/questions/ChoiceQuestion.vue'
@@ -95,21 +95,26 @@ const toItem = (card: StudyCardDTO, retry = false): Item => ({
   perm: shuffled(card.data.type === 'multiple_choice' ? card.data.options.length : card.data.type === 'matching' ? card.data.pairs.length : 0),
 })
 
-onMounted(async () => {
+const loadingLesson = ref(false)
+async function loadLesson() {
+  if (loadingLesson.value) return
+  loadingLesson.value = true
+  error.value = ''
   try {
     if (topic) {
       const q = await api.guideTopic(topic.sourceId, topic.index)
       key = q.pathKey
       topicCount.value = q.topicCount
-      lesson.value = { key, label: q.title, unitTitle: '', color: q.color, kind: 'lesson', cards: q.cards, section: null }
+      lesson.value = { examId: q.examId, key, label: q.title, unitTitle: '', color: q.color, kind: 'lesson', cards: q.cards, section: null }
       phase.value = 'practice'
       if (!q.cards.length) return void finish()
     } else lesson.value = await api.pathLesson(key)
     queue.value = shuffled(lesson.value.cards.length).map((i) => toItem(lesson.value!.cards[i]!))
   } catch (err) {
     error.value = err instanceof ApiRequestError ? err.message : 'No pude cargar la lección.'
-  }
-})
+  } finally { loadingLesson.value = false }
+}
+onMounted(loadLesson)
 
 const total = computed(() => lesson.value?.cards.length ?? 0)
 const item = computed(() => queue.value[0] ?? null)
@@ -148,8 +153,25 @@ const correctText = computed(() => {
   return d.expectedAnswer
 })
 
-function check() {
-  if (!ready.value || checked.value !== null) return
+const recorded = new Set<string>()
+async function check() {
+  if (!ready.value || checked.value !== null || saving.value) return
+  const { card, perm } = item.value!
+  if (lesson.value?.examId && !recorded.has(card.id)) {
+    const d = card.data
+    const saved: Answer = d.type === 'matching'
+      ? { type: 'matching', matches: (answer.value as number[]).map(i => perm[i]!) }
+      : d.type === 'multiple_choice' ? { type: 'multiple_choice', selectedIndex: perm[answer.value as number]! }
+      : { type: 'true_false', selectedIndex: answer.value as 0 | 1 }
+    saving.value = true
+    try {
+      await api.saveAnswer(lesson.value.examId, card.id, saved)
+      recorded.add(card.id)
+    } catch {
+      error.value = 'No se pudo guardar tu respuesta. Reintenta cuando vuelva la conexión.'
+      return
+    } finally { saving.value = false }
+  }
   const ok = isCorrect()
   checked.value = ok
   play(ok ? 'correct' : 'wrong')
@@ -161,6 +183,7 @@ function check() {
 }
 
 async function next() {
+  if (saving.value) return
   const [cur, ...rest] = queue.value
   // la que falló vuelve al final, con las opciones en otro orden
   queue.value = checked.value ? rest : [...rest, toItem(cur!.card, true)]
@@ -170,12 +193,15 @@ async function next() {
 }
 
 async function finish() {
+  if (saving.value) return
   saving.value = true
   try {
+    if (lesson.value?.examId) await api.submitExam(lesson.value.examId, { auto: false })
     const read = total.value === 0
     result.value = await api.completeLesson(key, {
       ...(read ? { firstTry: 1, total: 1 } : { firstTry: firstTry.value, total: total.value }),
       fromGuide: !!topic,
+      examId: lesson.value?.examId,
     })
     if (topic) afterTopic()
     play(result.value.stars === 3 ? 'perfect' : 'finish')
@@ -214,7 +240,7 @@ onBeforeUnmount(() => clearInterval(countdownTimer))
 const backTo = () => (topic ? `/guia/${topic.sourceId}` : '/camino')
 
 function exit() {
-  if (!result.value && correctCount.value > 0 && !confirm('¿Salir de la lección? Perderás el avance de esta lección.')) return
+  if (!result.value && correctCount.value > 0 && !confirm('¿Salir de la lección? Tus primeras respuestas quedan guardadas en el historial.')) return
   router.push(backTo())
 }
 </script>
@@ -238,6 +264,8 @@ function exit() {
 
     <p v-if="error" class="mt-6 rounded-[18px] bg-pink-tint px-4 py-3 text-[14px] font-semibold">
       {{ error }}
+      <button v-if="!lesson" class="mt-2 block font-bold underline" @click="loadLesson">Reintentar</button>
+      <button v-if="lesson" class="mt-2 block font-bold underline" @click="error = ''; if (!queue.length) finish()">Reintentar</button>
       <button class="mt-2 block font-bold underline" @click="router.push(backTo())">{{ topic ? 'Volver a la guía' : 'Volver al camino' }}</button>
     </p>
 
@@ -268,7 +296,7 @@ function exit() {
       <template v-if="topic">
         <div v-if="allTopicsDone" class="mt-8 w-full rounded-card bg-night p-5 text-left text-white">
           <p class="flex items-center gap-2 font-display text-[19px] font-extrabold"><PhExam :size="22" weight="fill" /> Ahora, el examen completo</p>
-          <p class="mt-1 text-[14px] text-white/70">20 preguntas de todo el tema, 25 minutos. Como un parcial de verdad.</p>
+          <p class="mt-1 text-[14px] text-white/70">Un examen que cubre los conceptos de toda la guía. La cantidad de preguntas y el tiempo se ajustan al contenido.</p>
           <p v-if="fullExam.error.value" class="mt-2 text-[13.5px] font-bold text-pink">{{ fullExam.error.value }}</p>
           <BaseButton class="mt-4" size="lg" variant="primary" block :loading="fullExam.starting.value" @click="cancelCountdown(); fullExam.start(topic.sourceId)">
             {{ countdown > 0 ? `Empieza en ${countdown}…` : 'Empezar el examen' }}
@@ -404,6 +432,6 @@ function exit() {
       </div>
     </template>
 
-    <div v-else class="flex flex-1 items-center justify-center"><MascotBlob mood="thinking" :size="100" /></div>
+    <div v-else class="flex flex-1 flex-col items-center justify-center gap-4 text-center" role="status"><MascotBlob mood="thinking" :size="100" /><p class="text-[15px] font-semibold">Preparando y revisando las preguntas de este capítulo…</p><p class="text-[13px] text-ink-2">Puede tardar un momento. El miniexamen se abrirá cuando esté listo.</p></div>
   </main>
 </template>

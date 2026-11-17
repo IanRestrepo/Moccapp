@@ -1,10 +1,11 @@
 // Generación y ampliación del banco de preguntas. Es el ÚNICO lugar (junto con la corrección de
 // abiertas) que llama a Gemini; los exámenes se arman desde el banco sin IA.
+import type { StudyGuide } from '@vetquiz/shared'
 import { eq, max } from 'drizzle-orm'
 import { db } from '../db/client.js'
 import { background } from '../lib/background.js'
 import { sendPush } from './push.js'
-import { questionBank, sources, type GeminiFileRef, type Source } from '../db/schema.js'
+import { questionBank, sources, studyGuides, type GeminiFileRef, type Source } from '../db/schema.js'
 import { env } from '../env.js'
 import { getLlm, type Part } from '../ai/gemini.js'
 import { BANK_PROMPT_VERSION, BANK_SYSTEM_PROMPT, bankUserPrompt, expandUserPrompt } from '../ai/prompts.js'
@@ -23,6 +24,9 @@ import { AppError, Errors } from '../lib/errors.js'
 import { withRetry } from '../lib/retry.js'
 import { hashPrompt } from './ingest/hash.js'
 import { splitPdf } from './ingest/pdf-split.js'
+import { guideFingerprint, guideText, supportedBySections } from './guide-grounding.js'
+import { literalGuideQuestions } from './guide-concepts.js'
+import { reviewGuideQuestions } from './guide-review.js'
 import { storage } from './storage.js'
 
 const log = (id: string, msg: string) => console.log(`[bank ${id.slice(0, 8)}] ${msg}`)
@@ -170,7 +174,7 @@ export function mergeTopics(all: string[], limit = 12): string[] {
 }
 
 /** Inserta sin duplicar (prompt_hash único por fuente). Devuelve cuántas entraron. */
-export async function insertQuestions(sourceId: string, questions: GeneratedQuestion[], batch: number): Promise<number> {
+export async function insertQuestions(sourceId: string, questions: GeneratedQuestion[], batch: number, guideHash: string | null = null): Promise<number> {
   if (!questions.length) return 0
   const seen = new Set<string>()
   const rows = questions
@@ -185,12 +189,16 @@ export async function insertQuestions(sourceId: string, questions: GeneratedQues
       sourceQuote: q.sourceQuote.trim(),
       sourceLocation: cleanLocation(q.sourceLocation),
       generationBatch: batch,
+      guideHash,
       promptVersion: BANK_PROMPT_VERSION,
-      promptHash: hashPrompt(q.prompt),
+      promptHash: hashPrompt(guideHash ? `${guideHash}:${q.prompt}` : q.prompt),
     }))
     .filter((r) => !seen.has(r.promptHash) && seen.add(r.promptHash))
-  const inserted = await db.insert(questionBank).values(rows).onConflictDoNothing().returning({ id: questionBank.id })
-  return inserted.length
+  let inserted = 0
+  for (let i = 0; i < rows.length; i += 500) {
+    inserted += (await db.insert(questionBank).values(rows.slice(i, i + 500)).onConflictDoNothing().returning({ id: questionBank.id })).length
+  }
+  return inserted
 }
 
 // ── Banco inicial ────────────────────────────────────────────
@@ -274,31 +282,76 @@ async function fillBank(sourceId: string): Promise<void> {
 
 // ── Ampliación (cuando un examen pide más de lo que hay) ─────
 
-export async function expandBank(sourceId: string, plan: GenerationPlan): Promise<number> {
+/** Respaldo de definiciones completas; los demás objetivos requieren generación y revisión. */
+export async function ensureGuideQuestions(sourceId: string, guide: StudyGuide): Promise<number> {
+  return insertQuestions(sourceId, literalGuideQuestions(guide), 1, guideFingerprint(guide))
+}
+
+export async function expandBank(sourceId: string, plan: GenerationPlan, sectionIndex?: number): Promise<number> {
   const [source] = await db.select().from(sources).where(eq(sources.id, sourceId))
   if (!source) throw Errors.notFound('La fuente')
-  const existing = await db.select({ prompt: questionBank.prompt }).from(questionBank).where(eq(questionBank.sourceId, sourceId))
+  const existing = await db.select({ prompt: questionBank.prompt, guideHash: questionBank.guideHash }).from(questionBank).where(eq(questionBank.sourceId, sourceId))
   const [last] = await db
     .select({ batch: max(questionBank.generationBatch) })
     .from(questionBank)
     .where(eq(questionBank.sourceId, sourceId))
   const batch = last?.batch ?? 0
 
-  const parts = await buildSourceParts(source)
-  const result = await generateWithRetry(
-    sourceId,
-    expandUserPrompt(
-      plan,
-      existing.map((e) => e.prompt),
-    ),
-    parts,
-  )
-  const inserted = await insertQuestions(sourceId, result.questions, batch + 1)
+  const [guideRow] = await db.select().from(studyGuides).where(eq(studyGuides.sourceId, sourceId))
+  const guide = guideRow?.data ? (await import('./guide.js')).withoutLogistics(guideRow.data) : null
+  const fingerprint = guide ? guideFingerprint(guide) : null
+  if (sectionIndex !== undefined && !guide?.sections[sectionIndex]) throw Errors.notFound('Ese capítulo')
+  const scope = guide && sectionIndex !== undefined ? { ...guide, sections: [guide.sections[sectionIndex]!] } : guide
+  const parts = scope ? [{ text: guideText(scope) }] : await buildSourceParts(source)
+  const coverage = guide ? await db.select({ topic: questionBank.topic, guideHash: questionBank.guideHash })
+    .from(questionBank).where(eq(questionBank.sourceId, sourceId)) : []
+  const sections = scope?.sections.map(s => ({ title: s.title, count: coverage.filter(q => q.guideHash === fingerprint && q.topic === s.title).length }))
+    .sort((a, b) => a.count - b.count)
+  const instruction = guide ? `\nLa única fuente adjunta es la GUÍA QUE LA ESTUDIANTE HA LEÍDO.
+No exijas pasos intermedios, moléculas, funciones o detalles que no explica explícitamente.
+Copia sourceQuote literalmente de la sección que respalda TODA la respuesta.
+Evalúa comprensión con preguntas naturales: definición, función, causa, comparación o aplicación sencilla.
+No preguntes qué dice el documento ni uses "según la guía", dobles negaciones, consejos de examen o fragmentos de tablas.
+Las respuestas pueden ser paráfrasis fieles: no exijas memorizar palabras. Cada enunciado debe ser una oración completa.
+En todos los tipos, cada dato necesario y cada distractor deben pertenecer a la MISMA sección que el topic.
+En verdadero/falso, evalúa solo una afirmación demostrable por la cita; no introduzcas conceptos externos.
+Usa como topic el título EXACTO de la sección. Reparte entre todas las secciones, priorizando las menos cubiertas:
+${JSON.stringify(sections)}
+sourceLocation debe decir "Guía: <título de sección>", no inventes páginas.` : ''
+  // No fabricar ejercicios para llenar cupos si no hay definiciones aptas.
+  const literalInserted = guide ? await insertQuestions(sourceId, literalGuideQuestions(guide), batch + 1, fingerprint) : 0
+  let result: Awaited<ReturnType<typeof generateWithRetry>>
+  try {
+    result = await generateWithRetry(sourceId, expandUserPrompt(plan, existing.filter(e => !guide || e.guideHash === fingerprint).map(e => e.prompt)) + instruction, parts)
+  } catch (error) {
+    if (!guide || sectionIndex !== undefined) throw error
+    return literalInserted
+  }
+  const valid = guide ? result.questions.filter(q => {
+    const section = guide.sections.find(s => s.title === q.topic)
+    return section && supportedBySections({ data: toQuestionData(q), sourceQuote: q.sourceQuote, guideHash: fingerprint }, [section], fingerprint!)
+  }) : result.questions
+  const reviewed = guide ? await reviewGuideQuestions(guide, valid) : valid
+  const inserted = literalInserted + await insertQuestions(sourceId, reviewed, batch + 1, fingerprint)
   log(sourceId, `ampliado: +${inserted} preguntas`)
   return inserted
 }
 
+const chaptersExpanding = new Map<string, Promise<number>>()
+/** La visita al capítulo espera su propia generación y revisión, no una ampliación genérica. */
+export function expandChapterOnce(sourceId: string, sectionIndex: number): Promise<number> {
+  const key = `${sourceId}:${sectionIndex}`
+  const current = chaptersExpanding.get(key)
+  if (current) return current
+  const job = expandBank(sourceId, { byDifficulty: { 1: 3, 2: 3 }, byType: { multiple_choice: 4, true_false: 2 } }, sectionIndex)
+    .finally(() => chaptersExpanding.delete(key))
+  chaptersExpanding.set(key, job)
+  return job
+}
+
 const expanding = new Map<string, Promise<number>>()
+const backgroundExpansionAt = new Map<string, number>()
+const BACKGROUND_EXPANSION_COOLDOWN_MS = 60_000
 
 /**
  * Ampliación con "vuelo único": si ya hay una ampliación de esa fuente en curso (por ejemplo la de
@@ -314,7 +367,11 @@ export function expandBankOnce(sourceId: string, plan: GenerationPlan): Promise<
 
 /** Ampliación en segundo plano: el examen actual no espera; el próximo ya tendrá preguntas nuevas. */
 export function queueExpansion(sourceId: string, plan: GenerationPlan): void {
-  if (expanding.has(sourceId)) return
+  const now = Date.now()
+  if (expanding.has(sourceId) || now - (backgroundExpansionAt.get(sourceId) ?? -Infinity) < BACKGROUND_EXPANSION_COOLDOWN_MS) return
+  // Las consultas del mapa y de las lecciones no deben repetir llamadas sin pausa.
+  for (const [id, at] of backgroundExpansionAt) if (now - at >= BACKGROUND_EXPANSION_COOLDOWN_MS) backgroundExpansionAt.delete(id)
+  backgroundExpansionAt.set(sourceId, now)
   background(
     expandBankOnce(sourceId, plan).catch((err) => log(sourceId, `ampliación de fondo falló: ${err instanceof AppError ? err.code : err}`)),
   )

@@ -12,9 +12,12 @@ export const LEVEL_MIX: Record<ExamLevel, Partial<Record<Difficulty, number>>> =
 
 export interface Candidate {
   id: string
+  sourceId?: string
   type: QuestionType
   difficulty: Difficulty
   topic: string
+  conceptKeys?: string[]
+  conceptTimesSeen?: number
   timesSeen: number
   /** Crédito la última vez que salió (null si nunca salió o quedó sin corregir) */
   lastCredit: number | null
@@ -23,6 +26,8 @@ export interface Candidate {
   /** true si se generó con reglas viejas del prompt: va al final de la fila */
   outdated?: boolean
 }
+
+export const candidateTopicKey = (c: { sourceId?: string; topic: string }) => `${c.sourceId ?? ''}:${c.topic.trim().toLowerCase()}`
 
 export type Rng = () => number
 
@@ -65,6 +70,8 @@ const byPriority = (a: Candidate, b: Candidate) => {
 }
 
 export interface SelectionResult {
+  missingTopics: string[]
+  missingConcepts: string[]
   picked: Candidate[]
   /** Preguntas que faltaron en las dificultades objetivo (antes de rellenar con niveles vecinos) */
   missingByDifficulty: Partial<Record<Difficulty, number>>
@@ -76,37 +83,66 @@ export interface SelectionResult {
 
 export function selectQuestions(
   candidates: Candidate[],
-  opts: { level: ExamLevel; types: QuestionType[]; count: number },
+  opts: { level: ExamLevel; types: QuestionType[]; count: number; requiredTopics?: string[]; requiredConcepts?: string[]; uniqueConcepts?: boolean },
   rng: Rng = Math.random,
 ): SelectionResult {
   const types = [...new Set(opts.types)]
   const pool = candidates.filter((c) => types.includes(c.type))
-  // barajar antes de ordenar: los empates salen en orden distinto en cada examen
-  const buckets = new Map<string, Candidate[]>()
-  for (const c of shuffle(pool, rng).sort(byPriority)) {
-    const key = `${c.difficulty}:${c.type}`
-    buckets.set(key, [...(buckets.get(key) ?? []), c])
-  }
+  const remaining = shuffle(pool, rng)
+  const topicKey = candidateTopicKey
+  const topicSeen = new Map<string, number>()
+  const topicPicked = new Map<string, number>()
+  const conceptPicked = new Set<string>()
+  for (const c of pool) topicSeen.set(topicKey(c), (topicSeen.get(topicKey(c)) ?? 0) + c.timesSeen)
 
   const typeQuota = largestRemainder(opts.count, Object.fromEntries(types.map((t) => [t, 1])) as Record<QuestionType, number>)
   const diffTargets = largestRemainder<Difficulty>(opts.count, LEVEL_MIX[opts.level])
   const picked: Candidate[] = []
   const missing: Partial<Record<Difficulty, number>> = {}
 
-  /** Toma de la dificultad `d` la pregunta del tipo al que más cuota le falte */
+  const pick = (best: Candidate) => {
+    remaining.splice(remaining.indexOf(best), 1)
+    picked.push(best)
+    topicPicked.set(topicKey(best), (topicPicked.get(topicKey(best)) ?? 0) + 1)
+    for (const key of best.conceptKeys ?? []) conceptPicked.add(key)
+    typeQuota.set(best.type, typeQuota.get(best.type)! - 1)
+  }
+  const repeatedConcept = (c: Candidate) => c.conceptKeys?.length && c.conceptKeys.every(k => conceptPicked.has(k)) ? 1 : 0
+  const novelty = (a: Candidate, b: Candidate) => repeatedConcept(a) - repeatedConcept(b) ||
+    (a.conceptTimesSeen ?? 0) - (b.conceptTimesSeen ?? 0) ||
+    typeQuota.get(b.type)! - typeQuota.get(a.type)! || byPriority(a, b)
+
+  // Primero la cobertura obligatoria; la dificultad nunca puede borrar una sección.
+  const missingTopics = new Set(opts.requiredTopics ?? [])
+  const missingConcepts = new Set(opts.requiredConcepts ?? [])
+  const coverage = (c: Candidate) => Number(missingTopics.has(topicKey(c))) + (c.conceptKeys ?? []).filter(k => missingConcepts.has(k)).length
+  while ((missingTopics.size || missingConcepts.size) && picked.length < opts.count) {
+    const options = remaining.filter(c => coverage(c) > 0)
+    if (!options.length) break
+    const deficit = (c: Candidate) => (diffTargets.get(c.difficulty) ?? 0) - picked.filter(p => p.difficulty === c.difficulty).length
+    options.sort((a, b) => coverage(b) - coverage(a) || deficit(b) - deficit(a) || novelty(a, b))
+    const best = options[0]!
+    pick(best)
+    missingTopics.delete(topicKey(best))
+    for (const key of best.conceptKeys ?? []) missingConcepts.delete(key)
+  }
+
   const takeFrom = (d: Difficulty): boolean => {
-    const options = types.filter((t) => buckets.get(`${d}:${t}`)?.length)
+    if (picked.length >= opts.count) return false
+    const options = remaining.filter(c => c.difficulty === d && (!opts.uniqueConcepts || !repeatedConcept(c)))
     if (!options.length) return false
-    const maxQuota = Math.max(...options.map((t) => typeQuota.get(t)!))
-    const best = shuffle(options.filter((t) => typeQuota.get(t) === maxQuota), rng)[0]!
-    picked.push(buckets.get(`${d}:${best}`)!.shift()!)
-    typeQuota.set(best, typeQuota.get(best)! - 1)
+    options.sort((a, b) =>
+      (topicPicked.get(topicKey(a)) ?? 0) - (topicPicked.get(topicKey(b)) ?? 0) ||
+      repeatedConcept(a) - repeatedConcept(b) ||
+      (topicSeen.get(topicKey(a)) ?? 0) - (topicSeen.get(topicKey(b)) ?? 0) || novelty(a, b))
+    pick(options[0]!)
     return true
   }
 
   // 1) dificultades objetivo (la de mayor peso primero)
   for (const [d, target] of [...diffTargets].sort((a, b) => b[1] - a[1])) {
-    for (let k = 0; k < target; k++) if (!takeFrom(d)) missing[d] = (missing[d] ?? 0) + 1
+    const needed = Math.max(0, target - picked.filter(p => p.difficulty === d).length)
+    for (let k = 0; k < needed && picked.length < opts.count; k++) if (!takeFrom(d)) missing[d] = (missing[d] ?? 0) + 1
   }
 
   // 2) lo que faltó se rellena con la dificultad más cercana (primero la de abajo: es más justo)
@@ -120,6 +156,8 @@ export function selectQuestions(
   }
 
   return {
+    missingTopics: [...missingTopics],
+    missingConcepts: [...missingConcepts],
     picked,
     missingByDifficulty: missing,
     shortBy: opts.count - picked.length,

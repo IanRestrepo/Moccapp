@@ -23,7 +23,7 @@ export function saveRead(sourceId: string, set: Set<number>) {
   }
 }
 
-/** Examen completo de toda la fuente (todos los tipos, nivel medio, 20 preguntas, 25 min) */
+/** Examen completo de toda la fuente (todos los tipos; tamaño y tiempo crecen para cubrir todos los conceptos) */
 export function useFullExam() {
   const router = useRouter()
   const exams = useExamStore()
@@ -35,7 +35,7 @@ export function useFullExam() {
     starting.value = true
     error.value = ''
     try {
-      const res = await api.createExam({ sourceIds: [sourceId], level: 'medium', timeLimitMin: 25, questionCount: 20, types: [...QUESTION_TYPES] })
+      const res = await api.createExam({ sourceIds: [sourceId], level: 'medium', timeLimitMin: 25, questionCount: 20, completeGuide: true, types: [...QUESTION_TYPES] })
       exams.setActive(res.exam, res.shortBy)
       play('finish')
       router.push(`/examen/${res.exam.id}`)

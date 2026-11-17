@@ -75,7 +75,7 @@ const guide = computed(() => data.value?.guide ?? null)
 const color = computed(() => colorClasses[data.value?.color ?? 'lilac'])
 
 // ── Audiolibro: Mocca le lee la guía ──
-const reader = useGuideReader(`vq-guide-audio-${id}`)
+const reader = useGuideReader(`vq-guide-audio-${id}`, id)
 const showPlayer = ref(false)
 watch(
   guide,
@@ -309,7 +309,7 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
             <p class="font-display text-[19px] font-extrabold">{{ allDone ? '¡Repasaste todos los temas!' : 'Examen completo' }}</p>
             <p class="mt-1 text-[14px] text-white/70">
               {{ allDone ? 'Ahora mídete con el examen de todo el tema.' : `Llevas ${read.size} de ${guide.sections.length} temas. Al terminar el último mini examen, empieza solo.` }}
-              20 preguntas, 25 minutos.
+              Preguntas de todas las secciones y conceptos, con tiempo ajustado a su cantidad.
             </p>
             <p v-if="fullExam.error.value" class="mt-2 text-[13.5px] font-bold text-pink">{{ fullExam.error.value }}</p>
             <BaseButton class="mt-4" size="md" variant="primary" :loading="fullExam.starting.value" @click="fullExam.start(id)">
@@ -359,6 +359,8 @@ const tarjetas = () => router.push({ path: '/estudiar', query: { sources: id } }
         :line="reader.current.value?.text ?? ''"
         :bar-class="color.bg"
         :failed="reader.failed.value"
+        :preparing="reader.preparing.value"
+        :device-voice="reader.deviceVoice.value"
         @toggle="reader.toggle()"
         @prev="reader.jump(-1)"
         @next="reader.jump(1)"

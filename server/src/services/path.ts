@@ -18,11 +18,18 @@ import type {
   StudyGuide,
 } from '@vetquiz/shared'
 import { db } from '../db/client.js'
-import { pathProgress, questionBank, sources, type BankQuestion } from '../db/schema.js'
+import { pathProgress, questionBank, sources, exams, examAnswers, type BankQuestion } from '../db/schema.js'
 import { AppError, Errors } from '../lib/errors.js'
 import { currentProfile, isOwner, visibleOwners } from '../lib/profile.js'
+import { expandChapterOnce } from './bank.js'
+import { conceptKeys, literalGuideQuestions } from './guide-concepts.js'
+import { emptyHistory, questionHistory, type QuestionHistory } from './question-history.js'
+import { toQuestionData } from '../ai/schemas.js'
+import { shuffle, selectQuestions, candidateTopicKey } from './exams/selection.js'
+import { startChapterExam } from './chapter-exams.js'
 import { recordActivity } from './gamification.js'
-import { ensureGuide, guideStatus, guidesFor } from './guide.js'
+import { guideFingerprint, supportedBySections } from './guide-grounding.js'
+import { guideStatus, guidesFor } from './guide.js'
 
 interface Spec {
   label: string
@@ -57,6 +64,7 @@ interface Unit {
   title: string
   color: SourceColor
   guide: GuideStatus
+  studyGuide?: StudyGuide
   nodes: Node[]
 }
 
@@ -94,62 +102,68 @@ function splitByDifficulty(sourceId: string, questions: BankQuestion[]) {
 
 const norm = (s: string) => s.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/\s+/g, ' ').trim()
 
-/** Preguntas hechas con los términos de la guía: "¿qué término corresponde a esta definición?" */
+/** Mismo respaldo pedagógico que el banco: definiciones válidas y distractores del capítulo. */
 export function termCards(sourceId: string, sectionIndex: number, guide: StudyGuide, max = 4): StudyCardDTO[] {
   const section = guide.sections[sectionIndex]!
-  const all = guide.sections.flatMap((s, si) => s.terms.map((t) => ({ ...t, si })))
-  const cards: StudyCardDTO[] = []
-  section.terms.slice(0, max).forEach((t, j) => {
-    // distractores: primero términos de la misma sección, luego de las vecinas
-    const others = all
-      .filter((o) => norm(o.term) !== norm(t.term))
-      .sort((a, b) => Math.abs(a.si - sectionIndex) - Math.abs(b.si - sectionIndex))
-    const picked: typeof others = []
-    for (const o of others) if (picked.length < 3 && !picked.some((p) => norm(p.term) === norm(o.term))) picked.push(o)
-    if (picked.length < 3) return
-    cards.push({
-      id: `${sourceId}:s${sectionIndex}:t${j}`,
-      sourceId,
-      type: 'multiple_choice',
-      topic: section.title,
-      difficulty: 1,
-      prompt: `¿Qué término corresponde a esta definición?\n«${t.definition}»`,
-      data: {
-        type: 'multiple_choice',
-        options: [t.term, ...picked.map((p) => p.term)],
-        correctIndex: 0,
-        distractorRationales: picked.map((p, i) => ({ optionIndex: i + 1, why: `${p.term}: ${p.definition}` })),
-      },
-      explanation: `${t.term}: ${t.definition}`,
-      sourceQuote: t.definition,
-      sourceLocation: section.location || null,
-    })
-  })
-  return cards
+  return literalGuideQuestions({ ...guide, sections: [section] }).filter(q => q.type === 'multiple_choice').slice(0, max).map((q, i) => ({
+    id: `${sourceId}:s${sectionIndex}:t${i}`, sourceId, type: q.type, topic: q.topic, difficulty: 1,
+    prompt: q.prompt, data: toQuestionData(q), explanation: q.explanation, sourceQuote: q.sourceQuote, sourceLocation: q.sourceLocation,
+  }))
 }
 
-const SECTION_BANK_MAX = 6
 const SECTION_MAX = 9
 
+/** Un concepto por ejercicio; rota por exposiciones de lecciones y exámenes del perfil. */
+export function rotateLessonCards(cards: StudyCardDTO[], guide: StudyGuide, history: QuestionHistory, max = SECTION_MAX): StudyCardDTO[] {
+  const keys = new Map(cards.map(q => [q.id, conceptKeys(q.sourceId, q, guide)]))
+  const seenConcepts = (q: StudyCardDTO) => Math.min(...keys.get(q.id)!.map(k => history.concepts.get(k)?.times ?? 0))
+  const lastConcept = (q: StudyCardDTO) => Math.min(...keys.get(q.id)!.map(k => history.concepts.get(k)?.lastAt ?? 0))
+  const pool = shuffle(cards).sort((a, b) => seenConcepts(a) - seenConcepts(b) || lastConcept(a) - lastConcept(b) ||
+    (history.questions.get(a.id)?.times ?? 0) - (history.questions.get(b.id)?.times ?? 0) || a.difficulty - b.difficulty)
+  const picked: StudyCardDTO[] = []
+  const covered = new Set<string>()
+  for (const card of pool) {
+    if (picked.length >= max) break
+    if (keys.get(card.id)!.every(k => covered.has(k))) continue
+    picked.push(card)
+    keys.get(card.id)!.forEach(k => covered.add(k))
+  }
+  return picked
+}
+
 /** Unidad desde la guía: una lección por sección (leer + practicar), jefe con lo más difícil y cofre */
-export function guideNodes(sourceId: string, guide: StudyGuide, questions: BankQuestion[]): Node[] {
+export function guideNodes(sourceId: string, guide: StudyGuide, questions: BankQuestion[], history: QuestionHistory = emptyHistory()): Node[] {
   const used = new Set<string>()
+  const fingerprint = guideFingerprint(guide)
+  const literal = literalGuideQuestions(guide).filter(q => q.type !== 'short_answer').map((q, index): StudyCardDTO => ({
+    id: `${sourceId}:g${fingerprint.slice(0, 12)}:c${index}`, sourceId, type: q.type, topic: q.topic,
+    difficulty: 1, prompt: q.prompt, data: toQuestionData(q), explanation: q.explanation,
+    sourceQuote: q.sourceQuote, sourceLocation: q.sourceLocation,
+  }))
   const nodes: Node[] = guide.sections.map((section, i) => {
     const topics = new Set(section.bankTopics.map(norm))
     const fromBank = questions
-      .filter((q) => !used.has(q.id) && topics.has(norm(q.topic)))
+      .filter((q) => q.type !== 'short_answer' && !used.has(q.id) && (topics.has(norm(q.topic)) || norm(q.topic) === norm(section.title)) && supportedBySections(q, [section], fingerprint))
       .sort((a, b) => a.difficulty - b.difficulty)
-      .slice(0, SECTION_BANK_MAX)
-    fromBank.forEach((q) => used.add(q.id))
-    const terms = termCards(sourceId, i, guide, Math.max(2, SECTION_MAX - fromBank.length))
-    return { key: `${sourceId}:s${i}`, kind: 'lesson' as const, label: section.title, section, questions: [...terms, ...fromBank.map(toCard)] }
+    const terms = termCards(sourceId, i, guide, section.terms.length)
+    const cards = rotateLessonCards([...terms, ...fromBank.map(toCard), ...literal.filter(q => q.topic === section.title)], guide, history, SECTION_MAX)
+    cards.forEach(q => used.add(q.id))
+    return { key: `${sourceId}:s${i}`, kind: 'lesson' as const, label: section.title, section, questions: cards }
   })
-  // jefe: primero las difíciles que no salieron en las secciones, luego las demás difíciles
-  const hard = questions
-    .filter((q) => q.difficulty >= 3)
-    .sort((a, b) => Number(used.has(a.id)) - Number(used.has(b.id)) || b.difficulty - a.difficulty)
-    .slice(0, 10)
-  if (hard.length >= MIN_LESSON) nodes.push({ key: `${sourceId}:boss`, kind: 'boss', label: 'Jefe de la unidad', questions: hard.map(toCard) })
+  // El jefe rota temas y conceptos usando el mismo historial que las lecciones.
+  const hard = questions.filter(q => q.type !== 'short_answer' && q.difficulty >= 3 && supportedBySections(q, guide.sections, fingerprint))
+  if (hard.length >= MIN_LESSON) {
+    const topics = [...new Set(hard.map(q => candidateTopicKey(q)))]
+    const candidates = hard.map(q => {
+      const seen = history.questions.get(q.id)
+      const keys = conceptKeys(sourceId, q, guide)
+      return { ...q, conceptKeys: keys, conceptTimesSeen: Math.min(...keys.map(k => history.concepts.get(k)?.times ?? 0)),
+        timesSeen: seen?.times ?? 0, lastCredit: seen?.credit ?? null, lastSeenAt: seen?.lastAt ?? null }
+    })
+    const chosen = selectQuestions(candidates, { level: 'hard', types: ['multiple_choice', 'true_false', 'matching'], count: Math.max(10, topics.length), requiredTopics: topics })
+    const ids = new Set(chosen.picked.map(q => q.id))
+    nodes.push({ key: `${sourceId}:boss`, kind: 'boss', label: 'Jefe de la unidad', questions: hard.filter(q => ids.has(q.id)).map(toCard) })
+  }
   nodes.push({ key: `${sourceId}:chest`, kind: 'chest', label: 'Cofre', questions: [] })
   return nodes
 }
@@ -175,14 +189,15 @@ async function buildUnits(): Promise<Unit[]> {
   for (const q of qs)
     if (q.type !== 'short_answer' && !isLogistics(q.topic)) bySource.set(q.sourceId, [...(bySource.get(q.sourceId) ?? []), q])
   const guides = await guidesFor(srcs.map((s) => s.id))
+  const history = await questionHistory(qs, new Map([...guides].flatMap(([id, row]) => row.data ? [[id, row.data] as const] : [])))
   return srcs
     .sort((a, b) => leadingNumber(a.originalName) - leadingNumber(b.originalName))
     .map((s) => {
       const row = guides.get(s.id)
       const guide = guideStatus(row)
       const questions = bySource.get(s.id) ?? []
-      const nodes = guide === 'ready' && row?.data?.sections.length ? guideNodes(s.id, row.data, questions) : splitIntoNodes(s.id, questions)
-      return { sourceId: s.id, title: s.title, color: s.color, guide, nodes }
+      const nodes = guide === 'ready' && row?.data?.sections.length ? guideNodes(s.id, row.data, questions, history) : splitIntoNodes(s.id, questions)
+      return { sourceId: s.id, title: s.title, color: s.color, guide, studyGuide: row?.data ?? undefined, nodes }
     })
     .filter((u) => u.nodes.length)
 }
@@ -231,12 +246,8 @@ function withStatus(units: Unit[], progress: Map<string, { stars: number }>) {
   return { dtoUnits, currentKey, flat }
 }
 
-/** Guías que se empiezan a preparar cada vez que abre el camino (de a poco, para no saturar a Gemini) */
-const GUIDES_PER_VISIT = 2
-
 export async function getPath(): Promise<PathDTO> {
   const units = await buildUnits()
-  for (const u of units.filter((u) => u.guide === 'none').slice(0, GUIDES_PER_VISIT)) await ensureGuide(u.sourceId).catch(() => {})
   const { dtoUnits, currentKey, flat } = withStatus(units, await progressMap())
   return { units: dtoUnits, currentKey, done: flat.filter((f) => f.dto.status === 'done').length, total: flat.length }
 }
@@ -266,9 +277,15 @@ const toCard = (q: BankQuestion): StudyCardDTO => ({
 })
 
 export async function getLesson(key: string): Promise<PathLessonDTO> {
-  const { node, unit } = await findNode(key)
+  let found = await findNode(key)
+  if (!found.node.questions.length && found.node.section) {
+    await expandChapterOnce(found.unit.sourceId, Number(key.split(':s')[1]))
+    found = await findNode(key)
+  }
+  const { node, unit } = found
   if (node.kind === 'chest') throw new AppError(400, 'IS_CHEST', 'Eso es un cofre, se abre desde el mapa.')
-  return { key, label: node.label, unitTitle: unit.title, color: unit.color, kind: node.kind, cards: node.questions, section: node.section ?? null }
+  const attempt = await startChapterExam(unit.sourceId, key, node.label, node.questions, unit.studyGuide ? guideFingerprint(unit.studyGuide) : undefined)
+  return { examId: attempt.examId, key, label: node.label, unitTitle: unit.title, color: unit.color, kind: node.kind, cards: attempt.cards, section: node.section ?? null }
 }
 
 export const starsFor = (firstTry: number, total: number) => {
@@ -276,16 +293,23 @@ export const starsFor = (firstTry: number, total: number) => {
   return r >= 0.9 ? 3 : r >= 0.7 ? 2 : 1
 }
 
-export async function completeLesson(key: string, firstTry: number, total: number, fromGuide = false) {
+export async function completeLesson(key: string, firstTry: number, total: number, fromGuide = false, examId?: string) {
   // desde la guía puede hacer los temas en cualquier orden
   const { node, next } = await findNode(key, fromGuide && !!key.match(/:s\d+$/))
   if (node.kind === 'chest') throw new AppError(400, 'IS_CHEST', 'Eso es un cofre.')
+  if (examId) {
+    const [attempt] = await db.select().from(exams).where(and(eq(exams.id, examId), eq(exams.profile, currentProfile()), eq(exams.chapterKey, key)))
+    if (!attempt || attempt.status !== 'completed') throw Errors.conflict('EXAM_NOT_DONE', 'Primero envía el miniexamen para guardar su resultado.')
+    const answers = await db.select().from(examAnswers).where(eq(examAnswers.examId, examId))
+    total = answers.length
+    firstTry = answers.filter(a => a.credit === 1).length
+  }
   const stars = starsFor(Math.min(firstTry, total), total)
   const mine = and(eq(pathProgress.profile, currentProfile()), eq(pathProgress.nodeKey, key))
   const [prev] = await db.select().from(pathProgress).where(mine)
   // huesitos solo la primera vez o si mejora estrellas; XP siempre (repasar también cuenta)
   const improved = !prev ? stars : Math.max(0, stars - prev.stars)
-  const xp = 5 * total + 10 * stars + (node.kind === 'boss' ? 30 : 0)
+  const xp = examId ? 0 : 5 * total + 10 * stars + (node.kind === 'boss' ? 30 : 0)
   const bones = (prev ? 0 : 3 + (node.kind === 'boss' ? 10 : 0)) + 2 * improved
   if (prev)
     await db
@@ -308,17 +332,26 @@ export async function openChest(key: string) {
 
 /** Mini examen de un tema de la guía: las mismas preguntas de la lección de esa sección en el camino */
 export async function guideTopicQuiz(sourceId: string, index: number): Promise<GuideTopicQuizDTO> {
-  const units = await buildUnits()
-  const unit = units.find((u) => u.sourceId === sourceId)
-  const node = unit?.nodes.find((n) => n.key === `${sourceId}:s${index}`)
+  let units = await buildUnits()
+  let unit = units.find((u) => u.sourceId === sourceId)
+  let node = unit?.nodes.find((n) => n.key === `${sourceId}:s${index}`)
   if (!unit || !node?.section) throw Errors.notFound('Ese tema')
+  if (!node.questions.length) {
+    await expandChapterOnce(sourceId, index)
+    units = await buildUnits()
+    unit = units.find(u => u.sourceId === sourceId)
+    node = unit?.nodes.find(n => n.key === `${sourceId}:s${index}`)
+    if (!unit || !node?.section) throw Errors.notFound('Ese tema')
+  }
+  const attempt = await startChapterExam(sourceId, node.key, node.label, node.questions, unit.studyGuide ? guideFingerprint(unit.studyGuide) : undefined)
   return {
+    examId: attempt.examId,
     sourceId,
     index,
     title: node.section.title,
     topicCount: unit.nodes.filter((n) => n.section).length,
     pathKey: node.key,
     color: unit.color,
-    cards: node.questions,
+    cards: attempt.cards,
   }
 }

@@ -137,6 +137,7 @@ export const CreateExamSchema = z.object({
   timeLimitMin: z.number().int().min(3).max(180),
   /** Opcional: si no viene se calcula a partir del tiempo */
   questionCount: z.number().int().min(3).max(60).optional(),
+  completeGuide: z.boolean().optional(),
   types: z.array(z.enum(QUESTION_TYPES)).min(1),
 })
 export type CreateExamInput = z.infer<typeof CreateExamSchema>
@@ -270,6 +271,7 @@ export interface CreateExamResponse {
 }
 
 export interface ExamHistoryItemDTO {
+  chapterTitle?: string | null
   id: string
   sourceId: string
   sourceTitle: string
@@ -480,6 +482,8 @@ export interface GuideTable {
   rows: string[][]
 }
 export interface GuideImage {
+  /** Revisión visual de pertinencia, especie e idioma. */
+  verifiedVersion?: number
   url: string
   width: number
   height: number
@@ -539,6 +543,7 @@ export interface StudyGuideDTO {
 
 /** Mini examen de un tema de la guía */
 export interface GuideTopicQuizDTO {
+  examId: string
   sourceId: string
   index: number
   title: string
@@ -582,6 +587,7 @@ export interface PathDTO {
 }
 
 export interface PathLessonDTO {
+  examId?: string
   key: string
   label: string
   unitTitle: string
@@ -593,6 +599,7 @@ export interface PathLessonDTO {
 }
 
 export const PathCompleteSchema = z.object({
+  examId: z.string().uuid().optional(),
   /** Preguntas acertadas a la primera */
   firstTry: z.number().int().min(0),
   total: z.number().int().min(1),

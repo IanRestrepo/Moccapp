@@ -15,6 +15,8 @@ defineProps<{
   barClass: string
   /** El celular no pudo hablar */
   failed?: boolean
+  preparing?: boolean
+  deviceVoice?: boolean
 }>()
 defineEmits<{ toggle: []; prev: []; next: []; rate: []; close: [] }>()
 </script>
@@ -44,9 +46,10 @@ defineEmits<{ toggle: []; prev: []; next: []; rate: []; close: [] }>()
           <PhX :size="16" weight="bold" />
         </button>
       </div>
+      <p v-if="preparing" class="mx-3 mt-2 text-[13px] text-white/70" role="status">Preparando la voz natural…</p>
+      <p v-else-if="deviceVoice" class="mx-3 mt-2 text-[12px] text-white/60" role="status">Voz natural no disponible. Usando la voz del dispositivo.</p>
       <p v-if="failed" class="mx-3 mt-2 rounded-[14px] bg-pink/25 px-3 py-2 text-[13px] font-semibold leading-snug">
-        Tu celular no pudo leer en voz alta. Revisa que no esté en silencio y que tenga una voz en español
-        (Ajustes → Accesibilidad → Texto a voz) e intenta de nuevo.
+        La lectura se pausó sin saltar el texto ni cambiar de voz. Revisa tu conexión y pulsa reproducir para reintentar.
       </p>
       <p v-else class="mx-3 mt-2 line-clamp-2 min-h-[2.5em] text-[13px] leading-snug text-white/70" aria-live="polite">{{ line }}</p>
       <div class="flex items-center justify-between px-3 pb-3 pt-2">

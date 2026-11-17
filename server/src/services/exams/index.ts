@@ -17,13 +17,17 @@ import { db } from '../../db/client.js'
 import { examAnswers, exams, questionBank, sources, type Exam } from '../../db/schema.js'
 import type { GenerationPlan } from '../../ai/schemas.js'
 import { AppError, Errors } from '../../lib/errors.js'
-import { expandBankOnce, queueExpansion } from '../bank.js'
+import { ensureGuideQuestions, expandBankOnce, queueExpansion } from '../bank.js'
+import { guidesFor } from '../guide.js'
+import { conceptKeys, guideConcepts } from '../guide-concepts.js'
+import { questionHistory } from '../question-history.js'
+import { guideFingerprint, supportedBySections } from '../guide-grounding.js'
 import { BANK_PROMPT_VERSION } from '../../ai/prompts.js'
 import { getSource } from '../sources.js'
 import { currentProfile } from '../../lib/profile.js'
 import { getStatsRow, localDate, motivationFor, recordCompletedExam, toStatsDTO } from '../gamification.js'
 import { gradeAuto, gradeOpenAnswers, isValidAnswer, toPublicQuestion, toReview, type Grade } from './grading.js'
-import { LEVEL_MIX, displayPermutation, orderForExam, selectQuestions, type Candidate } from './selection.js'
+import { LEVEL_MIX, candidateTopicKey, displayPermutation, orderForExam, selectQuestions, type Candidate } from './selection.js'
 
 /** Margen para la latencia del celular: se aceptan respuestas hasta 15 s después del límite */
 export const GRACE_MS = 15_000
@@ -36,34 +40,33 @@ async function loadCandidates(sourceIds: string[]): Promise<Candidate[]> {
   const bank = await db
     .select({
       id: questionBank.id,
+      sourceId: questionBank.sourceId,
+      data: questionBank.data,
+      sourceQuote: questionBank.sourceQuote,
+      guideHash: questionBank.guideHash,
       type: questionBank.type,
       difficulty: questionBank.difficulty,
       topic: questionBank.topic,
+      prompt: questionBank.prompt,
       promptVersion: questionBank.promptVersion,
     })
     .from(questionBank)
     .where(inArray(questionBank.sourceId, sourceIds))
-  // historial por pregunta de este perfil (en cualquier examen, aunque haya mezclado otras fuentes)
-  const history = await db
-    .select({ questionId: examAnswers.questionId, credit: examAnswers.credit, at: exams.createdAt })
-    .from(examAnswers)
-    .innerJoin(exams, eq(exams.id, examAnswers.examId))
-    .innerJoin(questionBank, eq(questionBank.id, examAnswers.questionId))
-    .where(and(inArray(questionBank.sourceId, sourceIds), eq(exams.profile, currentProfile())))
-    .orderBy(asc(exams.createdAt))
-
-  const seen = new Map<string, { times: number; lastCredit: number | null; lastAt: number }>()
-  for (const h of history) {
-    const prev = seen.get(h.questionId)
-    seen.set(h.questionId, { times: (prev?.times ?? 0) + 1, lastCredit: h.credit, lastAt: h.at.getTime() })
-  }
-  return bank.map(({ promptVersion, ...q }) => {
-    const s = seen.get(q.id)
+  const guides = await guidesFor(sourceIds)
+  const current = bank.filter(q => {
+    const guide = guides.get(q.sourceId)?.data
+    return !guide || supportedBySections(q, guide.sections, guideFingerprint(guide))
+  })
+  const readyGuides = new Map([...guides].flatMap(([id, row]) => row.data ? [[id, row.data] as const] : []))
+  const history = await questionHistory(current, readyGuides)
+  return current.map(({ promptVersion, data, sourceQuote, ...q }) => {
+    const seen = history.questions.get(q.id)
+    const guide = readyGuides.get(q.sourceId)
+    const keys = guide ? conceptKeys(q.sourceId, { ...q, data, sourceQuote }, guide) : []
     return {
-      ...q,
-      timesSeen: s?.times ?? 0,
-      lastCredit: s?.lastCredit ?? null,
-      lastSeenAt: s?.lastAt ?? null,
+      ...q, conceptKeys: keys,
+      conceptTimesSeen: keys.length ? Math.min(...keys.map(k => history.concepts.get(k)?.times ?? 0)) : 0,
+      timesSeen: seen?.times ?? 0, lastCredit: seen?.credit ?? null, lastSeenAt: seen?.lastAt ?? null,
       outdated: promptVersion < BANK_PROMPT_VERSION,
     }
   })
@@ -84,13 +87,18 @@ function expansionPlan(
   return { byDifficulty, byType }
 }
 
-async function insertExam(p: {
+export async function insertExam(p: {
   sourceIds: string[]
   level: Exam['level']
   types: QuestionType[]
   timeLimitSec: number
   mode: Exam['mode']
   parentExamId?: string
+  completeGuide?: boolean
+  chapterKey?: string
+  chapterTitle?: string
+  guideHash?: string
+  identityOrder?: boolean
   questionIds: string[]
 }): Promise<string> {
   const qs = await db.select({ id: questionBank.id, data: questionBank.data }).from(questionBank).where(inArray(questionBank.id, p.questionIds))
@@ -105,6 +113,8 @@ async function insertExam(p: {
         sourceIds: p.sourceIds,
         profile: currentProfile(),
         mode: p.mode,
+        completeGuide: p.completeGuide ?? false,
+        chapterKey: p.chapterKey, chapterTitle: p.chapterTitle, guideHash: p.guideHash,
         parentExamId: p.parentExamId,
         level: p.level,
         questionTypes: p.types,
@@ -119,12 +129,13 @@ async function insertExam(p: {
       p.questionIds.map((questionId, position) => {
         const data = dataById.get(questionId)!
         // se baraja en el servidor y se guarda: el cliente nunca recibe la respuesta
-        const displayOrder =
+        let displayOrder =
           data.type === 'multiple_choice'
             ? displayPermutation(data.options.length)
             : data.type === 'matching'
               ? displayPermutation(data.pairs.length, Math.random, true)
               : null
+        if (p.identityOrder && displayOrder) displayOrder = displayOrder.map((_, i) => i)
         return { examId: exam!.id, questionId, position, displayOrder }
       }),
     )
@@ -144,7 +155,13 @@ export async function createExam(input: CreateExamInput): Promise<CreateExamResp
         : `"${notReady[0]!.title}" todavía se está procesando. Espera a que termine o quítala del examen.`,
     )
   const types = [...new Set(input.types)]
-  const count = input.questionCount ?? suggestQuestionCount(input.timeLimitMin, types, input.level)
+  const guides = await guidesFor(ids)
+  if (input.completeGuide && ids.some(id => !guides.get(id)?.data))
+    throw Errors.conflict('GUIDE_NOT_READY', 'Prepara la guía antes de iniciar el examen completo.')
+  const requiredTopics = [...guides].flatMap(([sourceId, row]) => row.data?.sections.map(section => candidateTopicKey({ sourceId, topic: section.title })) ?? [])
+  const requiredConcepts = input.completeGuide ? [...guides].flatMap(([id, row]) => row.data ? guideConcepts(row.data).map(c => `${id}:${c.id}`) : []) : []
+  const count = input.completeGuide ? Math.max(1, requiredTopics.length, requiredConcepts.length) : Math.max(input.questionCount ?? suggestQuestionCount(input.timeLimitMin, types, input.level), requiredTopics.length)
+  const selectionOptions = { level: input.level, types, count, requiredTopics, requiredConcepts, uniqueConcepts: input.completeGuide }
   /** Con varias fuentes, cada una genera su parte de lo que falte */
   const expandAll = (missing: Partial<Record<Difficulty, number>>) =>
     Promise.allSettled(ids.map((id) => expandBankOnce(id, expansionPlan(missing, input.level, types, ids.length)))).then(
@@ -156,18 +173,27 @@ export async function createExam(input: CreateExamInput): Promise<CreateExamResp
     ids.forEach((id) => queueExpansion(id, expansionPlan(missing, input.level, types, ids.length)))
 
   let candidates = await loadCandidates(ids)
-  let selection = selectQuestions(candidates, { level: input.level, types, count })
-  const missingTotal = Object.values(selection.missingByDifficulty).reduce((a, b) => a + (b ?? 0), 0)
+  let selection = selectQuestions(candidates, selectionOptions)
   let bankExpanded = false
+  if (selection.missingTopics.length || selection.missingConcepts.length || selection.shortBy > 0) {
+    const inserted = await Promise.all([...guides].map(([id, row]) => row.data ? ensureGuideQuestions(id, row.data) : Promise.resolve(0)))
+    if (inserted.some(n => n > 0)) {
+      bankExpanded = true
+      candidates = await loadCandidates(ids)
+      selection = selectQuestions(candidates, selectionOptions)
+      queueAll(selection.missingByDifficulty)
+    }
+  }
+  const missingTotal = Object.values(selection.missingByDifficulty).reduce((a, b) => a + (b ?? 0), 0)
 
   // Falta mucho del nivel pedido (o no alcanza ni con vecinos): se amplía AHORA y ella espera.
   // Falta poco o ya casi todo es repetido: se arma con lo que hay y se amplía en segundo plano.
-  if (selection.shortBy > 0 || missingTotal > count * 0.25) {
+  if (selection.missingTopics.length || selection.missingConcepts.length || (!input.completeGuide && selection.shortBy > 0) || missingTotal > count * 0.25) {
     try {
       await expandAll(selection.missingByDifficulty)
       bankExpanded = true
       candidates = await loadCandidates(ids)
-      selection = selectQuestions(candidates, { level: input.level, types, count })
+      selection = selectQuestions(candidates, selectionOptions)
     } catch (err) {
       if (selection.picked.length < 3) throw err
       log(`no se pudo ampliar; se arma con ${selection.picked.length}`)
@@ -184,6 +210,9 @@ export async function createExam(input: CreateExamInput): Promise<CreateExamResp
   )
   if (!bankExpanded && outdatedDiffs.length) queueAll(Object.fromEntries(outdatedDiffs.map((d) => [d, 1])))
 
+  if (selection.missingTopics.length || selection.missingConcepts.length)
+    throw Errors.conflict('GUIDE_COVERAGE_PENDING', 'Todavía estamos preparando preguntas claras y verificadas para cubrir toda la guía. Intenta de nuevo en un momento.')
+
   if (!selection.picked.length)
     throw Errors.conflict('NO_QUESTIONS', 'Esta fuente no tiene preguntas de esos tipos. Prueba con otros tipos.')
 
@@ -191,11 +220,12 @@ export async function createExam(input: CreateExamInput): Promise<CreateExamResp
     sourceIds: ids,
     level: input.level,
     types,
-    timeLimitSec: input.timeLimitMin * 60,
+    timeLimitSec: Math.max(input.timeLimitMin * 60, count > (input.questionCount ?? count) ? count * 75 : 0),
     mode: 'normal',
+    completeGuide: input.completeGuide,
     questionIds: orderForExam(selection.picked).map((q) => q.id),
   })
-  return { exam: (await getExamDTO(examId)) as ExamInProgressDTO, bankExpanded, shortBy: selection.shortBy }
+  return { exam: (await getExamDTO(examId)) as ExamInProgressDTO, bankExpanded, shortBy: input.completeGuide ? 0 : selection.shortBy }
 }
 
 /** "Solo preguntas que fallé": crédito < 1, incluidas las que dejó en blanco. Tiempo proporcional. */
@@ -207,8 +237,9 @@ export async function createRetryFailed(examId: string): Promise<CreateExamRespo
     .from(examAnswers)
     .innerJoin(questionBank, eq(questionBank.id, examAnswers.questionId))
     .where(eq(examAnswers.examId, examId))
-  const failed = rows.filter((r) => (r.credit ?? 0) < 1)
-  if (!failed.length) throw Errors.conflict('NOTHING_TO_RETRY', '¡No fallaste ninguna! No hay nada que repetir.')
+  const allowed = new Set((await loadCandidates(examSourceIds(exam))).map(q => q.id))
+  const failed = rows.filter((r) => (r.credit ?? 0) < 1 && allowed.has(r.id))
+  if (!failed.length) throw Errors.conflict('NOTHING_TO_RETRY', 'No hay preguntas falladas compatibles con la guía actual. Puedes crear un examen nuevo.')
 
   const minutes = Math.ceil(((exam.timeLimitSec / 60) * failed.length) / rows.length)
   const newId = await insertExam({
@@ -217,6 +248,7 @@ export async function createRetryFailed(examId: string): Promise<CreateExamRespo
     types: [...new Set(failed.map((f) => f.type))],
     timeLimitSec: Math.max(3, minutes) * 60,
     mode: 'retry_failed',
+    chapterKey: exam.chapterKey ?? undefined, chapterTitle: exam.chapterTitle ?? undefined, guideHash: exam.guideHash ?? undefined,
     parentExamId: exam.id,
     questionIds: orderForExam(failed).map((f) => f.id),
   })
@@ -226,12 +258,21 @@ export async function createRetryFailed(examId: string): Promise<CreateExamRespo
 /** "Nuevo examen con la misma fuente": misma configuración; la prioridad trae preguntas que no ha visto. */
 export async function createRepeat(examId: string): Promise<CreateExamResponse> {
   const exam = await getExam(examId)
+  if (exam.chapterKey) {
+    const path = await import('../path.js')
+    const section = /:s(\d+)$/.exec(exam.chapterKey)
+    const attempt = section
+      ? await path.guideTopicQuiz(exam.sourceId, Number(section[1]))
+      : await path.getLesson(exam.chapterKey)
+    return { exam: await getExamDTO(attempt.examId!) as ExamInProgressDTO, bankExpanded: false, shortBy: 0 }
+  }
   return createExam({
     sourceIds: examSourceIds(exam),
     level: exam.level,
     timeLimitMin: Math.round(exam.timeLimitSec / 60),
     questionCount: exam.mode === 'normal' ? exam.questionCount : undefined,
     types: exam.questionTypes,
+    completeGuide: exam.completeGuide,
   })
 }
 
@@ -493,7 +534,7 @@ export async function getExamDTO(examId: string, now = new Date()): Promise<Exam
     id: exam.id,
     sourceId: exam.sourceId,
     sourceIds: examSourceIds(exam),
-    sourceTitle: await titleFor(examSourceIds(exam)),
+    sourceTitle: exam.chapterTitle ? `${await titleFor(examSourceIds(exam))} · ${exam.chapterTitle}` : await titleFor(examSourceIds(exam)),
     level: exam.level,
     status: 'in_progress',
     questions: rows.map((r) => toPublicQuestion(r.q, r.a.displayOrder)),
@@ -530,6 +571,7 @@ export async function listHistory(q: { sourceId?: string; cursor?: string; limit
       sourceId: e.sourceId,
       sourceTitle: examSourceIds(e).length > 1 ? await titleFor(examSourceIds(e), titles) : title,
       sourceColor: color,
+      chapterTitle: e.chapterTitle,
       level: e.level,
       mode: e.mode,
       score: e.score,

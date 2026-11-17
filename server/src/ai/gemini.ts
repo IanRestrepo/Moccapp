@@ -47,7 +47,7 @@ function classify(err: unknown, isVideo: boolean): AppError {
       return new AppError(
         429,
         'AI_QUOTA',
-        'Se acabó la cuota de Gemini por hoy. Se reinicia en unas horas; para que no pase, activa la facturación de tu API key en Google AI Studio.',
+        'Gemini alcanzó un límite de cuota. No podemos preparar preguntas nuevas ahora. Tus guías y resultados siguen guardados; intenta más tarde.',
         false,
       )
     if (status === 429 || status === 503) return Errors.aiBusy()
@@ -94,8 +94,9 @@ export async function withModelFallback<T>(
   now: () => number = Date.now,
 ): Promise<{ result: T; model: string }> {
   const candidates = models.filter((m) => (blockedUntil.get(m) ?? 0) <= now())
-  // si todos están bloqueados, igual se intenta el principal (quizás ya se reinició)
-  const order = candidates.length ? candidates : models.slice(0, 1)
+  // Respetar el plazo del proveedor: recargar la página no debe disparar otra petición bloqueada.
+  if (!candidates.length) throw new AppError(429, 'AI_QUOTA', 'Gemini alcanzó un límite de cuota. No podemos preparar preguntas nuevas ahora. Tus guías y resultados siguen guardados; intenta más tarde.', false)
+  const order = [...new Set(candidates)]
   let lastErr: unknown
   for (const model of order) {
     try {

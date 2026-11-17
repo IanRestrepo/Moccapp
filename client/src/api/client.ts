@@ -257,7 +257,7 @@ export const api = {
   // Camino
   path: () => request<PathDTO>('GET', '/path'),
   pathLesson: (key: string) => request<PathLessonDTO>('GET', `/path/${encodeURIComponent(key)}`),
-  completeLesson: (key: string, body: { firstTry: number; total: number; fromGuide?: boolean }) =>
+  completeLesson: (key: string, body: { firstTry: number; total: number; fromGuide?: boolean; examId?: string }) =>
     request<PathCompleteResponse>('POST', `/path/${encodeURIComponent(key)}/complete`, body),
   openChest: (key: string) => request<{ bones: number; xp: number; nextKey: string | null }>('POST', `/path/${encodeURIComponent(key)}/open`),
 

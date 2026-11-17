@@ -133,6 +133,7 @@ export const questionBank = pgTable(
     generationBatch: smallint('generation_batch').notNull().default(0),
     /** Versión de las reglas del prompt con que se generó (BANK_PROMPT_VERSION) */
     promptVersion: smallint('prompt_version').notNull().default(1),
+    guideHash: text('guide_hash'),
     /** Normalizado para detectar duplicados al ampliar */
     promptHash: text('prompt_hash').notNull(),
     ...timestamps,
@@ -157,6 +158,10 @@ export const exams = pgTable(
     sourceIds: jsonb('source_ids').$type<string[]>().notNull().default([]),
     /** Perfil que lo presentó */
     profile: text('profile').notNull().default('ash'),
+    completeGuide: boolean('complete_guide').notNull().default(false),
+    chapterKey: text('chapter_key'),
+    chapterTitle: text('chapter_title'),
+    guideHash: text('guide_hash'),
     mode: examMode('mode').notNull().default('normal'),
     /** Examen del que salieron las preguntas falladas (modo retry_failed) */
     parentExamId: uuid('parent_exam_id').references((): AnyPgColumn => exams.id, { onDelete: 'set null' }),
@@ -463,3 +468,14 @@ export const accounts = pgTable('accounts', {
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 })
+
+/** Preguntas vistas en lecciones: separadas de las notas y del historial de exámenes. */
+export const guideExposure = pgTable('guide_exposure', {
+  profile: text('profile').notNull(),
+  sourceId: uuid('source_id').notNull().references(() => sources.id, { onDelete: 'cascade' }),
+  guideHash: text('guide_hash').notNull(),
+  questionKey: text('question_key').notNull(),
+  concepts: jsonb('concepts').$type<string[]>().notNull(),
+  timesSeen: integer('times_seen').notNull().default(1),
+  lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+}, t => [primaryKey({ columns: [t.profile, t.sourceId, t.guideHash, t.questionKey] })])

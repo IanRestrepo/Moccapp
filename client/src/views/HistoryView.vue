@@ -91,7 +91,7 @@ const open = (e: ExamHistoryItemDTO) => router.push(e.status === 'in_progress' ?
                 <template v-if="e.status === 'in_progress'">En curso · toca para seguir</template>
                 <template v-else-if="e.status === 'grading'">Corrección pendiente</template>
                 <template v-else>
-                  {{ EXAM_LEVEL_LABELS[e.level] }} · {{ e.questionCount }} preguntas<template v-if="e.timeUsedSec"> · {{ duration(e.timeUsedSec) }}</template>
+                  {{ e.chapterTitle ? `Miniexamen · ${e.chapterTitle}` : EXAM_LEVEL_LABELS[e.level] }} · {{ e.questionCount }} preguntas<template v-if="e.timeUsedSec"> · {{ duration(e.timeUsedSec) }}</template>
                 </template>
               </span>
             </span>

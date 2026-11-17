@@ -17,8 +17,8 @@ pathRouter.get('/:key', async (req, res) => {
 })
 
 pathRouter.post('/:key/complete', async (req, res) => {
-  const { firstTry, total, fromGuide } = PathCompleteSchema.parse(req.body)
-  res.json(await completeLesson(Key.parse(req.params.key), firstTry, total, fromGuide))
+  const { firstTry, total, fromGuide, examId } = PathCompleteSchema.parse(req.body)
+  res.json(await completeLesson(Key.parse(req.params.key), firstTry, total, fromGuide, examId))
 })
 
 pathRouter.post('/:key/open', async (req, res) => {

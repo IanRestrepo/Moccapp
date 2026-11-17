@@ -4,6 +4,8 @@ import type { Difficulty, StudyDeckDTO } from '@vetquiz/shared'
 import { db } from '../db/client.js'
 import { questionBank, sources } from '../db/schema.js'
 import { AppError, Errors } from '../lib/errors.js'
+import { guidesFor } from './guide.js'
+import { guideFingerprint, supportedBySections } from './guide-grounding.js'
 import { visibleOwners } from '../lib/profile.js'
 
 const shuffle = <T>(xs: T[]) => {
@@ -17,7 +19,12 @@ const shuffle = <T>(xs: T[]) => {
 export async function getStudyDeck(sourceIds: string[]): Promise<StudyDeckDTO> {
   const found = await db.select().from(sources).where(and(inArray(sources.id, sourceIds), inArray(sources.owner, visibleOwners())))
   if (found.length !== sourceIds.length) throw Errors.notFound('Esa fuente')
-  const rows = await db.select().from(questionBank).where(inArray(questionBank.sourceId, sourceIds))
+  const bank = await db.select().from(questionBank).where(inArray(questionBank.sourceId, sourceIds))
+  const guides = await guidesFor(sourceIds)
+  const rows = bank.filter(q => {
+    const guide = guides.get(q.sourceId)?.data
+    return !guide || supportedBySections(q, guide.sections, guideFingerprint(guide))
+  })
   if (!rows.length) {
     const processing = found.some((s) => s.status === 'processing')
     throw new AppError(409, 'NO_CARDS', processing ? 'Mocca todavía está leyendo la fuente. Espera un momentico.' : 'Esta fuente no tiene preguntas todavía.')

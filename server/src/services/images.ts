@@ -1,6 +1,8 @@
 // Imágenes para la guía: se buscan en Wikimedia Commons (libres, con autor y licencia) con las búsquedas que
 // propone la IA para cada sección. Si no hay nada bueno o Commons no responde, la sección queda sin imagen.
 import type { GuideImage } from '@vetquiz/shared'
+import { z } from 'zod'
+import { getLlm } from '../ai/gemini.js'
 
 const API = 'https://commons.wikimedia.org/w/api.php'
 // Wikimedia pide identificar la app en el User-Agent
@@ -72,40 +74,65 @@ export async function searchCommons(query: string, fetchImpl: typeof fetch = fet
   return null
 }
 
-const GENERIC = /^(anatomy|anatomical|diagram|illustration|image|photo|picture|structure|overview|schematic|drawing)$/i
-/** "dog extrinsic shoulder muscles anatomy" → [igual, sin palabras genéricas, y quitando palabras del final] (máx. 4) */
-export function broader(query: string): string[] {
-  const words = query.trim().split(/\s+/).filter(Boolean)
-  const core = words.filter((w) => !GENERIC.test(w))
-  const out = [words.join(' '), core.join(' ')]
-  for (let n = core.length - 1; n >= 2; n--) out.push(core.slice(0, n).join(' '))
-  return [...new Set(out)].filter(Boolean).slice(0, 4)
+/** No quitar especie ni estructura al ampliar búsquedas: cambia el significado. */
+export function broader(query: string): string[] { return [query.trim()].filter(Boolean) }
+
+export const IMAGE_REVIEW_VERSION = 1
+export const IMAGE_REVIEW_SYSTEM = `Revisa la imagen real como recurso educativo para la sección adjunta.
+Aprueba solo si representa el tema y la especie que se estudia. En veterinaria/MVZ rechaza anatomía humana,
+salvo que la sección enseñe explícitamente una comparación humana. No supongas equivalencia entre especies.
+Todo rótulo visible debe estar en español o no haber rótulos; rechaza otros idiomas, texto ilegible o ambiguo.
+No confíes en el pie de foto propuesto: inspecciona la imagen. Si no puedes verificar, rechaza.
+Devuelve relevant, speciesMatch, spanishOrUnlabelled y caption (descripción fiel en español).`
+const ImageReview = z.object({ relevant: z.boolean(), speciesMatch: z.boolean(), spanishOrUnlabelled: z.boolean(), caption: z.string().min(1) })
+
+export async function verifyGuideImage(img: Omit<GuideImage, 'caption'>, context: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  try {
+    const url = new URL(img.url)
+    if (url.protocol !== 'https:' || url.hostname !== 'upload.wikimedia.org') return null
+    const res = await fetchImpl(url, { signal: AbortSignal.timeout(8000), redirect: 'error' })
+    const mime = res.headers.get('content-type')?.split(';')[0] ?? ''
+    if (!res.ok || !/^image\/(jpeg|png|webp)$/.test(mime)) return null
+    const max = 4 * 1024 * 1024
+    if (Number(res.headers.get('content-length')) > max || !res.body) return null
+    const reader = res.body.getReader()
+    const pieces: Uint8Array[] = []
+    let size = 0
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      size += value.length
+      if (size > max) { await reader.cancel(); return null }
+      pieces.push(value)
+    }
+    const data = Buffer.concat(pieces)
+    const raw = await getLlm().generateJson({ system: IMAGE_REVIEW_SYSTEM,
+      source: [{ text: context }, { inlineData: { data: data.toString('base64'), mimeType: mime } }],
+      prompt: 'Verifica esta imagen para esta sección. Ante duda, rechaza.', jsonSchema: z.toJSONSchema(ImageReview), temperature: 0, thinking: 'low' })
+    const result = ImageReview.parse(raw)
+    return result.relevant && result.speciesMatch && result.spanishOrUnlabelled ? result.caption : null
+  } catch { return null }
 }
 
-/** Imágenes para cada sección; sin repetir la misma imagen en dos secciones */
+/** Recupera candidatos y solo publica los aprobados visualmente para la sección. */
 export async function findImages(
-  sections: { images: { query: string; caption: string }[] }[],
+  sections: { images: { query: string; caption: string }[]; context?: string }[],
   fetchImpl: typeof fetch = fetch,
+  verify = verifyGuideImage,
 ): Promise<GuideImage[][]> {
   const seen = new Set<string>()
   const out: GuideImage[][] = []
-  // de a pocas para ser amables con Commons
   for (const s of sections) {
-    const found = await Promise.all(
-      s.images.slice(0, 2).map(async (q) => {
-        let img = null
-        // Commons exige todas las palabras: si no hay nada, se prueba cada vez más general
-        for (const attempt of broader(q.query)) if ((img = await searchCommons(attempt, fetchImpl))) break
-        return { q, img }
-      }),
-    )
-    out.push(
-      found.flatMap(({ q, img }) => {
-        if (!img || seen.has(img.url)) return []
-        seen.add(img.url)
-        return [{ ...img, caption: q.caption }]
-      }),
-    )
+    const images: GuideImage[] = []
+    if (s.context) for (const q of s.images.slice(0, 2)) {
+      const img = await searchCommons(q.query, fetchImpl)
+      if (!img || seen.has(img.url)) continue
+      const caption = await verify(img, s.context, fetchImpl)
+      if (!caption) continue
+      seen.add(img.url)
+      images.push({ ...img, caption, verifiedVersion: IMAGE_REVIEW_VERSION })
+    }
+    out.push(images)
   }
   return out
 }

@@ -11,7 +11,7 @@ import { background } from '../lib/background.js'
 import { AppError, Errors } from '../lib/errors.js'
 import { withRetry } from '../lib/retry.js'
 import { buildSourceParts } from './bank.js'
-import { findImages } from './images.js'
+import { findImages, IMAGE_REVIEW_VERSION } from './images.js'
 import { getSource } from './sources.js'
 
 const log = (id: string, msg: string) => console.log(`[guía ${id.slice(0, 8)}] ${msg}`)
@@ -101,7 +101,7 @@ export function withoutLogistics(g: StudyGuide): StudyGuide {
     .map((b) => ({ ...b, children: b.children?.filter((c) => !isCourseLogistics(c.label) && !isCourseLogistics(c.detail ?? '')) }))
   return {
     ...g,
-    sections: sections.length ? sections : g.sections,
+    sections: (sections.length ? sections : g.sections).map(s => ({ ...s, images: s.images.filter(i => i.verifiedVersion === IMAGE_REVIEW_VERSION) })),
     conceptMap: { ...g.conceptMap, branches: branches.length ? branches : g.conceptMap.branches },
     checklist: g.checklist.filter((c) => !isCourseLogistics(c)),
   }
@@ -193,7 +193,7 @@ async function generate(sourceId: string): Promise<void> {
     )
     // imágenes de Wikimedia Commons para cada sección (si Commons falla, la guía queda sin imágenes)
     log(sourceId, `buscando imágenes: ${queries.map((q) => q.images.map((i) => i.query).join(' + ') || '—').join(' | ')}`)
-    const images = await findImages(queries)
+    const images = await findImages(queries.map((q, i) => ({ ...q, context: `Estudiante de Medicina Veterinaria y Zootecnia. Respeta la asignatura de la fuente. En anatomía o fisiología no usar seres humanos por defecto.\nFuente: ${source.title}\nSección: ${guide.sections[i]!.title}\n${guide.sections[i]!.summary}` })))
     guide.sections.forEach((s, i) => (s.images = images[i] ?? []))
     await db.update(studyGuides).set({ status: 'ready', data: guide, errorMessage: null, updatedAt: new Date() }).where(eq(studyGuides.sourceId, sourceId))
     log(sourceId, `lista: ${guide.sections.length} secciones, ${images.flat().length} imágenes, en ${((Date.now() - started) / 1000).toFixed(0)} s`)
