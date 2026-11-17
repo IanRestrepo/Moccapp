@@ -10,6 +10,9 @@ const EnvSchema = z.object({
     .string()
     .default('gemini-3.6-flash,gemini-3.5-flash-lite')
     .transform((v) => v.split(',').map((m) => m.trim()).filter(Boolean)),
+  CLOUDFLARE_API_TOKEN: z.string().optional(),
+  CLOUDFLARE_ACCOUNT_ID: z.string().regex(/^[a-f0-9]{32}$/i).optional(),
+  CLOUDFLARE_MODEL: z.enum(['@cf/meta/llama-3.3-70b-instruct-fp8-fast']).default('@cf/meta/llama-3.3-70b-instruct-fp8-fast'),
   PORT: z.coerce.number().default(4000),
   CLIENT_ORIGIN: z.string().default('http://localhost:5173'),
   GEMINI_INLINE_MAX_MB: z.coerce.number().default(15),

@@ -1,3 +1,5 @@
+import { createCloudflareLlm } from './cloudflare.js'
+import { withProviderFallback } from './provider-fallback.js'
 // Cliente de Gemini (SDK oficial @google/genai). La API key solo vive aquí, en el backend.
 import { ApiError, FileState, GoogleGenAI, ThinkingLevel, type Part } from '@google/genai'
 import { generationSchema, isSchemaRejection } from './response-schema.js'
@@ -146,7 +148,7 @@ export function createGeminiLlm(): Llm {
                   responseJsonSchema: generationSchema(jsonSchema),
                   temperature,
                   maxOutputTokens: 32_768,
-                  httpOptions: { timeout: 240_000 },
+                  httpOptions: { timeout: env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID ? 45_000 : 240_000 },
                   ...(lowThinking ? { thinkingConfig: { thinkingLevel: ThinkingLevel.LOW } } : {}),
                 },
               })
@@ -198,7 +200,15 @@ export function createGeminiLlm(): Llm {
 }
 
 let instance: Llm | null = null
-export const getLlm = () => (instance ??= createGeminiLlm())
+export const getLlm = () => {
+  if (!instance) {
+    const primary = createGeminiLlm()
+    instance = env.CLOUDFLARE_API_TOKEN && env.CLOUDFLARE_ACCOUNT_ID
+      ? withProviderFallback(primary, createCloudflareLlm({ token: env.CLOUDFLARE_API_TOKEN, accountId: env.CLOUDFLARE_ACCOUNT_ID, model: env.CLOUDFLARE_MODEL }))
+      : primary
+  }
+  return instance
+}
 /** Solo tests */
 export const setLlm = (llm: Llm) => {
   instance = llm
