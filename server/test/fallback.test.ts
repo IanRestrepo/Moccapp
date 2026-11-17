@@ -77,3 +77,18 @@ test('todos bloqueados: recargar no consume nuevas llamadas y respeta retryDelay
   await assert.rejects(withModelFallback(MODELS, call, () => now))
   assert.equal(calls, 6)
 })
+
+test('saldo prepago agotado (402) se informa sin culpar al archivo ni cambiar de modelo', async () => {
+  let calls = 0
+  const raw = await withModelFallback(MODELS, async () => {
+    calls++
+    throw new ApiError({ status: 402, message: 'Your prepayment credits are depleted.' })
+  }).catch(e => e)
+  const error = classifyGeminiError(raw)
+  assert.equal(error.code, 'AI_CREDITS_EXHAUSTED')
+  assert.equal(error.status, 402)
+  assert.equal(error.retryable, false)
+  assert.equal(calls, 1)
+  assert.match(error.message, /créditos de Gemini/)
+  assert.doesNotMatch(error.message, /otro archivo|por hoy|unas horas/)
+})

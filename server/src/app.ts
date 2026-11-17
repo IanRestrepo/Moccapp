@@ -1,4 +1,5 @@
 import path from 'node:path'
+import { getMaintenanceNotice } from './services/maintenance.js'
 import cors from 'cors'
 import express from 'express'
 import { env } from './env.js'
@@ -40,6 +41,10 @@ export function createApp() {
   app.post('/api/access/reset', resetPassword)
   app.post('/api/access/password', changePassword)
   app.post('/api/access/logout', logout)
+  app.get('/api/maintenance', async (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store')
+    res.json(await getMaintenanceNotice())
+  })
   app.use('/api/sources', sourcesRouter)
   app.use('/api/exams', examsRouter)
   app.use('/api/stats', statsRouter)

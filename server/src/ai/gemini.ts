@@ -1,5 +1,6 @@
 // Cliente de Gemini (SDK oficial @google/genai). La API key solo vive aquí, en el backend.
 import { ApiError, FileState, GoogleGenAI, ThinkingLevel, type Part } from '@google/genai'
+import { generationSchema, isSchemaRejection } from './response-schema.js'
 import { env } from '../env.js'
 import { AppError, Errors } from '../lib/errors.js'
 
@@ -43,6 +44,8 @@ function classify(err: unknown, isVideo: boolean): AppError {
   if (err instanceof ApiError) {
     const { status, message } = err
     // 429 = cuota; 503 = "model is currently experiencing high demand" (saturación temporal de Google)
+    if (status === 402)
+      return new AppError(402, 'AI_CREDITS_EXHAUSTED', 'Se agotaron los créditos de Gemini del proyecto. Es necesario recargar el saldo para generar preguntas nuevas. Tus guías y resultados siguen guardados.', false)
     if (status === 429 && /quota/i.test(message))
       return new AppError(
         429,
@@ -62,7 +65,9 @@ function classify(err: unknown, isVideo: boolean): AppError {
     if (status === 400 && isVideo && VIDEO_HINTS.test(message)) return Errors.videoUnavailable()
     if (status === 400 && /too large|payload size|token count|exceeds/i.test(message))
       return new AppError(413, 'SOURCE_TOO_LARGE', 'La fuente es demasiado grande para procesarla de una vez. Divídela en partes.')
-    return new AppError(502, 'AI_REJECTED', 'Gemini no pudo procesar esta fuente. Prueba con otro archivo.')
+    if (isSchemaRejection(status, message))
+      return new AppError(502, 'AI_SCHEMA_REJECTED', 'El servicio rechazó el formato de las preguntas. Tu guía sigue guardada; no necesitas cambiar el archivo.')
+    return new AppError(502, 'AI_REJECTED', 'No se pudieron preparar las preguntas esta vez. Tu guía sigue guardada. Intenta de nuevo.')
   }
   // red caída, timeout, DNS…
   return Errors.aiFailed()
@@ -138,7 +143,7 @@ export function createGeminiLlm(): Llm {
                 config: {
                   systemInstruction: system,
                   responseMimeType: 'application/json',
-                  responseJsonSchema: jsonSchema,
+                  responseJsonSchema: generationSchema(jsonSchema),
                   temperature,
                   maxOutputTokens: 32_768,
                   httpOptions: { timeout: 240_000 },

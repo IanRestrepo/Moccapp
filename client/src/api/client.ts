@@ -1,5 +1,6 @@
 // Cliente tipado de la API. Los contratos vienen de @vetquiz/shared: si el backend cambia, esto no compila.
 import type {
+  MaintenanceNotice,
   Answer,
   ApiError,
   CreateExamInput,
@@ -270,6 +271,9 @@ export const api = {
   messageSeen: (id: string) => request<void>('POST', `/presence/messages/${id}/seen`),
 
   // Administrador
+  maintenanceNotice: () => request<MaintenanceNotice>('GET', '/maintenance'),
+  adminMaintenanceNotice: () => request<MaintenanceNotice>('GET', '/admin/maintenance'),
+  saveMaintenanceNotice: (body: MaintenanceNotice) => request<MaintenanceNotice>('PUT', '/admin/maintenance', body),
   adminPresence: () => request<AdminPresenceDTO>('GET', '/admin/presence'),
   adminOverview: () => request<{ people: AdminPersonDTO[] }>('GET', '/admin/overview').then((r) => r.people),
   adminMessages: () => request<{ messages: SentMoccaMessageDTO[] }>('GET', '/admin/messages').then((r) => r.messages),

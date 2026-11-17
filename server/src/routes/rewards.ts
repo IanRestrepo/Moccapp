@@ -1,4 +1,5 @@
 import { Router } from 'express'
+import { getMaintenanceNotice, saveMaintenanceNotice } from '../services/maintenance.js'
 import { z } from 'zod'
 import { PresencePingSchema, RewardInputSchema, SendMoccaMessageSchema } from '@vetquiz/shared'
 import { adminSetAccount, adminStatus, enterAdmin, listAccounts, isAdmin, requireAdmin, requireOwner } from '../lib/access.js'
@@ -61,6 +62,13 @@ export const adminRouter = Router()
 adminRouter.get('/status', adminStatus)
 adminRouter.post('/login', enterAdmin)
 adminRouter.use(requireAdmin)
+adminRouter.get('/maintenance', async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-store')
+  res.json(await getMaintenanceNotice())
+})
+adminRouter.put('/maintenance', async (req, res) => {
+  res.json(await saveMaintenanceNotice(req.body))
+})
 
 adminRouter.get('/rewards', async (_req, res) => {
   res.json({ ...(await getRewards({ includeInactive: true })), whatsappConfigured: !!env.ADMIN_WHATSAPP })

@@ -866,3 +866,11 @@ export interface OpenPackResponse {
   cards: { mood: MoccaMood; rarity: MoccaRarity; isNew: boolean; count: number }[]
   packs: number
 }
+
+
+export const MaintenanceNoticeSchema = z.object({
+  enabled: z.boolean(),
+  title: z.string().trim().min(1).max(100),
+  message: z.string().trim().min(1).max(300),
+})
+export type MaintenanceNotice = z.infer<typeof MaintenanceNoticeSchema>

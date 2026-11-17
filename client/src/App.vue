@@ -3,6 +3,7 @@ import { onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import type { PresenceView } from '@vetquiz/shared'
 import { MotionConfig } from 'motion-v'
+import MaintenanceNotice from '@/components/MaintenanceNotice.vue'
 import BottomNav from '@/components/BottomNav.vue'
 import NewSourceSheet from '@/components/source/NewSourceSheet.vue'
 import AccessGate from '@/components/AccessGate.vue'
@@ -98,6 +99,7 @@ onBeforeUnmount(() => window.removeEventListener(LOCKED_EVENT, lock))
   <MotionConfig reduced-motion="user">
     <AccessGate v-if="locked" :needs-account="needsAccount" :name="who" />
     <template v-else>
+      <MaintenanceNotice v-if="!$route.path.startsWith('/admin')" />
       <RouterView />
       <BottomNav v-if="$route.meta.nav" />
       <NewSourceSheet />

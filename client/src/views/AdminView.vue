@@ -34,6 +34,7 @@ import { REWARD_STICKERS, type AdminPersonDTO, type AdminRewardsDTO, type Presen
 import BaseButton from '@/components/ui/BaseButton.vue'
 import MascotBlob from '@/components/mascot/MascotBlob.vue'
 import StickerIcon from '@/components/StickerIcon.vue'
+import AdminMaintenance from '@/components/admin/AdminMaintenance.vue'
 import AdminMessages from '@/components/admin/AdminMessages.vue'
 import AdminAccounts from '@/components/admin/AdminAccounts.vue'
 import { api, ApiRequestError } from '@/api/client'
@@ -460,6 +461,7 @@ const input = 'h-11 min-w-0 rounded-[14px] bg-surface px-3 text-[14px] ring-1 ri
 
       <!-- AJUSTES -->
       <div v-else class="mt-5">
+        <AdminMaintenance @toast="say" />
         <p v-if="!data.whatsappConfigured" class="mb-4 rounded-[18px] bg-yellow-tint px-4 py-3 text-[13.5px] font-semibold">
           Configura <code>ADMIN_WHATSAPP</code> (tu número con indicativo, ej. 573001234567) para que al reclamar le salga el botón de avisarte por WhatsApp.
         </p>

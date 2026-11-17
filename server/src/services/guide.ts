@@ -1,6 +1,6 @@
 // Guía de estudio de una fuente: el tema COMPLETO explicado por secciones, con términos, tablas, mapa conceptual
 // y lista de "lo que debes saber". Una llamada a Gemini por fuente; se guarda y la comparten todas las que la ven.
-import { count, eq, inArray } from 'drizzle-orm'
+import { and, count, eq, inArray } from 'drizzle-orm'
 import type { ConceptNode, GuideSection, StudyGuide, StudyGuideDTO } from '@vetquiz/shared'
 import { db } from '../db/client.js'
 import { questionBank, studyGuides, sources, type StudyGuideRow } from '../db/schema.js'
@@ -185,12 +185,17 @@ async function generate(sourceId: string): Promise<void> {
         const parsed = GuideResponseSchema.safeParse(raw)
         if (!parsed.success) throw new AppError(502, 'AI_BAD_SHAPE', Errors.aiFailed().message, true)
         if (parsed.data.insufficientContent) throw Errors.noContent()
-        const g = toGuide(parsed.data, source.title, await mapJob)
+        const g = toGuide(parsed.data, source.title)
         if (g.sections.length === 0) throw new AppError(502, 'AI_EMPTY_GUIDE', Errors.aiFailed().message, true)
         return { g, queries: imageQueries(parsed.data) }
       },
       { onRetry: (err, attempt) => log(sourceId, `reintento ${attempt} (${err instanceof AppError ? err.code : err})`) },
     )
+    // El contenido ya permite estudiar: mapa e imágenes nunca bloquean su publicación.
+    await db.update(studyGuides).set({ status: 'ready', data: guide, errorMessage: null, updatedAt: new Date() }).where(eq(studyGuides.sourceId, sourceId))
+    log(sourceId, `contenido listo: ${guide.sections.length} secciones`)
+    const map = await mapJob
+    if (map?.branches.length) guide.conceptMap = map
     // imágenes de Wikimedia Commons para cada sección (si Commons falla, la guía queda sin imágenes)
     log(sourceId, `buscando imágenes: ${queries.map((q) => q.images.map((i) => i.query).join(' + ') || '—').join(' | ')}`)
     const images = await findImages(queries.map((q, i) => ({ ...q, context: `Estudiante de Medicina Veterinaria y Zootecnia. Respeta la asignatura de la fuente. En anatomía o fisiología no usar seres humanos por defecto.\nFuente: ${source.title}\nSección: ${guide.sections[i]!.title}\n${guide.sections[i]!.summary}` })))
@@ -204,7 +209,7 @@ async function generate(sourceId: string): Promise<void> {
     await db
       .update(studyGuides)
       .set({ status: 'error', errorMessage: appErr.message, updatedAt: new Date() })
-      .where(eq(studyGuides.sourceId, sourceId))
+      .where(and(eq(studyGuides.sourceId, sourceId), eq(studyGuides.status, 'generating')))
       .catch(() => {})
   }
 }
@@ -215,11 +220,11 @@ const running = new Map<string, Promise<void>>()
 export async function ensureGuide(sourceId: string, retry = false): Promise<void> {
   if (running.has(sourceId)) return
   const [row] = await db.select().from(studyGuides).where(eq(studyGuides.sourceId, sourceId))
-  if (row && ((row.status === 'generating' && !isStale(row)) || (!retry && row.status !== 'generating' && !outdated(row)))) return
+  if (row && ((row.status === 'generating' && (!retry || !isStale(row))) || (!retry && row.status !== 'generating' && !outdated(row)))) return
   const values = { status: 'generating' as const, errorMessage: null, startedAt: new Date(), updatedAt: new Date() }
   // solo un arranque gana aunque lleguen dos peticiones a la vez
   const claimed = row
-    ? await db.update(studyGuides).set(values).where(eq(studyGuides.sourceId, sourceId)).returning()
+    ? await db.update(studyGuides).set(values).where(and(eq(studyGuides.sourceId, sourceId), eq(studyGuides.updatedAt, row.updatedAt), eq(studyGuides.status, row.status))).returning()
     : await db.insert(studyGuides).values({ sourceId, ...values }).onConflictDoNothing().returning()
   if (!claimed.length) return
   const job = generate(sourceId).finally(() => running.delete(sourceId))

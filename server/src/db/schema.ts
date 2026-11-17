@@ -479,3 +479,11 @@ export const guideExposure = pgTable('guide_exposure', {
   timesSeen: integer('times_seen').notNull().default(1),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
 }, t => [primaryKey({ columns: [t.profile, t.sourceId, t.guideHash, t.questionKey] })])
+
+
+export const maintenanceNotice = pgTable('maintenance_notice', {
+  id: integer('id').primaryKey().default(1),
+  enabled: boolean('enabled').notNull().default(true),
+  title: text('title').notNull(),
+  message: text('message').notNull(),
+})
